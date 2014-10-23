@@ -20,6 +20,8 @@ install: | $(RAS_BIN_DIR)
 # copy all the binary into $(RAS_BIN_DIR)
 	cp $(BIN_DIR)/* $(RAS_BIN_DIR)
 
+clean:
+	rm -f $(BUILD_EXES) $(CP_EXES)
 
 $(BUILD_EXES): $(BIN_DIR)/%: %.cpp
 	$(CXX) -o $@ $(CXXFLAGS) $<
@@ -34,5 +36,4 @@ $(RAS_BIN_DIR) $(BIN_DIR):
 # create directory
 	mkdir -p $@
 
-clean:
-	rm -f $(BUILD_EXES) $(CP_EXES)
+.PHONY: all install clean
