@@ -1,0 +1,5 @@
+# vim temp files
+.*.sw*
+
+# build target
+command/bin

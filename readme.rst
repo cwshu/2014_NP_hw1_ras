@@ -4,8 +4,8 @@
 In this homework, you are asked to design rsh-like access systems,
 called remote access systems, including both
 client and server.  In this system, the server designates a directory,
-say ras/; then, clients can only run executable programs inside the
-directory, ras/.
+say ``ras/``; then, clients can only run executable programs inside the
+directory, ``ras/``.
 
 The following is a scenario of using the system.
 
