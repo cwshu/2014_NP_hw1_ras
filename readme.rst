@@ -34,7 +34,7 @@ login::
     **    printenv
     **
 
-bulitin commands: printenv and setenv and (exit)::
+bulitin commands: printenv and setenv::
 
     % printenv PATH                       # Initial PATH is bin/ and ./
     PATH=bin:.
