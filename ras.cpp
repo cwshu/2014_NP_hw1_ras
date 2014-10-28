@@ -1,6 +1,5 @@
 #include <cstdio>
 #include <cstdlib>
-#include <cstdarg>
 #include <cctype>
 #include <cstring>
 #include <cinttypes>
@@ -14,36 +13,46 @@
 #include <arpa/inet.h>
 
 #include "socket.h"
+#include "io_wrapper.h"
+#include "parser.h"
 
 using namespace std;
 
 const char RAS_IP[] = "0.0.0.0";
 const int RAS_PORT = 52000;
-const char WHITESPACE[] = " \t\r\n\v\f";
 
-/*
-void test_pwd(const char* tmp_file_name){
-    FILE* fptr = fopen(tmp_file_name, "w");
-    fprintf(fptr, "test\n");
-    fclose(fptr);
-}
-*/
-typedef struct anony_pipe {
+struct anony_pipe {
+    int enable;
     int read_fd;
     int write_fd;
-} anony_pipe;
+    anony_pipe(){
+        enable = 0;
+        read_fd = -1;
+        write_fd = -1;
+    }
+}; 
 
-typedef struct special_char {
+struct pipe_manager {
+    int cur_pipe;
+    vector<anony_pipe> pipe_array;
+    pipe_manager(){
+        cur_pipe = 0;
+        pipe_array = vector<anony_pipe>(16, anony_pipe());
+    }
+};
+
+struct special_char {
     char c;
     int num;
-} special_char;
+    special_char(){
+        c = 0;
+        num = 0;
+    }
+};
 
 void ras_service(socketfd_t client_socket);
-int execute_cmd(socketfd_t client_socket, vector<anony_pipe> pipes_fd, const char* origin_command);
+int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
 const int CMD_NORMAL = 0, CMD_EXIT = 1;
-
-void perr(const char* format, ...);
-void perr_and_exit(const char* format, ...);
 
 int main(){
     /* listening RAS_PORT first */
@@ -77,7 +86,7 @@ void ras_service(socketfd_t client_socket){
     /* client is connect to server, this function do ras service to client */
     char cmd_buf[MAX_CMD_SIZE+1] = {0};
     int cmd_size = 0;
-    vector<anony_pipe> pipes_fd;
+    pipe_manager cmd_pipe_manager;
 
     while(1){
 
@@ -101,7 +110,7 @@ void ras_service(socketfd_t client_socket){
         while( (newline_char = strchr(cur_cmd_head, '\n')) != NULL ){
             /* split command and execute it. */
             newline_char[0] = '\0';
-            if( execute_cmd(client_socket, pipes_fd, cur_cmd_head) == CMD_EXIT )
+            if( execute_cmd(client_socket, cmd_pipe_manager, cur_cmd_head) == CMD_EXIT )
                 return;
             cur_cmd_head = newline_char+1;
         }
@@ -115,8 +124,8 @@ void ras_service(socketfd_t client_socket){
     }
 }
 
-const char SHELL_SPECIAL_CHARS[] = "|><";
-int execute_cmd(socketfd_t client_socket, vector<anony_pipe> pipes_fd, const char* origin_command){
+
+int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command){
     /* parsing and execute shell command */
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
@@ -124,129 +133,48 @@ int execute_cmd(socketfd_t client_socket, vector<anony_pipe> pipes_fd, const cha
     char* command = (char*) malloc(cmd_len);
     strncpy(command, origin_command, strlen(origin_command));
 
-    char* current_cmd = command;
-    char* cmds[10001] = {NULL}; /* point to NULL after last cmd */
-    special_char s_char[10001] = {0}; /* .c member is NULL after last s_char */
-    int cmd_num = 0;
+    /* parsing */
+    struct one_line_cmd parsed_cmds;
+    parsing_command(&parsed_cmds, command);
+    parsed_cmds.print();
 
-    while(1){
-        current_cmd += strspn(current_cmd, WHITESPACE); /* strip left whitespaces */
-        if(current_cmd[0] == '\0'){
-            /* NULL-terminator of command */
-            s_char[cmd_num].c = 0;
-            cmds[cmd_num] = NULL;
+#if 0
+    for(int i=0; cmds[cmd_num] != NULL; i++){
+        /* execute command.
+         * manage pipe and io redirection.
+         * if command error, print command and stop this input.
+         */
+        int read_fd = -1, write_fd = -1;
+        if( s_char[cmd_num].c == '|' ){
+            int index = cmd_pipe_manager.cur_pipe + s_char[cmd_num].num;
+            if( index > cmd_pipe_manager.pipe_array.size() ){
+                cmd_pipe_manager.pipe_array.resize(index, anony_pipe());
+            }
+            if( !cmd_pipe_manager.pipe_array[index].enable ){
+                int pipefd[2];
+                pipe(pipefd);
+                cmd_pipe_manager.pipe_array[index].read_fd = pipefd[0];
+                cmd_pipe_manager.pipe_array[index].write_fd = pipefd[1];
+            }
+            write_fd = cmd_pipe_manager.pipe_array[index].write_fd;
 
-            break;
+            if( cmd_pipe_manager.pipe_array[cmd_pipe_manager.cur_pipe].enable )
+                read_fd = cmd_pipe_manager.pipe_array[cmd_pipe_manager.cur_pipe].read_fd;
         }
 
-        char* special_char_place = strpbrk(current_cmd, SHELL_SPECIAL_CHARS);
-        if(special_char_place != NULL){
-            /* record command */
-            int cmd_len = special_char_place - current_cmd;
-            cmds[cmd_num] = (char*) malloc(cmd_len+1*sizeof(char));
-            strncpy(cmds[cmd_num], current_cmd, cmd_len);
+        int pid = fork();
+        if( pid == 0 ){
+            if( read_fd != -1 ) dup2(read_fd, 0);
+            if( write_fd != -1 ) dup2(write_fd, 1);
+            // execvp();
+        }
+        /*
+        else if( pid > 0 ){
             
-            /* record special_char and update current_cmd */
-            s_char[cmd_num].c = special_char_place[0];
-            s_char[cmd_num].num = 0;
-            if(special_char_place[0] == '|'){
-                /* cmd1 |<num> cmd2 */
-                if(special_char_place[1] >= '0' && special_char_place[1] <= '9'){
-                    /* |[0-9] => pipe + number */
-                    char *end_of_num = NULL;
-                    int pipe_num = strtol(special_char_place+1, &end_of_num, 10);
-                    if(pipe_num == 0){
-                        end_of_num[0] = '\0';
-                        perr_and_exit("pipe error: %s\n", special_char_place);
-                    }
-                    
-                    s_char[cmd_num].num = pipe_num;
-                    current_cmd = end_of_num;
-                }
-                else{
-                    /* only pipe without number */
-                    s_char[cmd_num].num = 1;
-                    current_cmd = special_char_place+1;
-                }
-            }
-            else{
-                current_cmd = special_char_place+1;
-            }
-
-            cmd_num++;
         }
-        else{
-            int cmd_len = strlen(current_cmd);
-            cmds[cmd_num] = (char*) malloc(cmd_len+1*sizeof(char));
-            strncpy(cmds[cmd_num], current_cmd, cmd_len);
-            s_char[cmd_num].c = 0; /* end of s_char */
-            cmds[cmd_num+1] = NULL;
-            cmd_num++;
-
-            break;
-        }
-    }
-
-#if 0
-    printf("cmd_num: %d\n", cmd_num);
-    for(int i=0; cmds[i] != NULL; i++){
-        printf("cmd: %s\n", cmds[i]);
-        if(s_char[i].c == '|'){
-            printf("s_char: (%c, %d)\n", s_char[i].c, s_char[i].num);
-        }
-        else if(s_char[i].c != 0){
-            printf("s_char: %c\n", s_char[i].c);
-        }
+        */
+        cmd_pipe_manager.cur_pipe += 1;
     }
 #endif
-
-#if 0
-    strtok(cmd_start, WHITESPACE);
-
-    printf("command: %s\n", cmd_start);
-
-    /* build-in command */
-    if( strncmp(cmd_start, "exit", 4) == 0 ){
-        return CMD_EXIT;
-    }
-    else if( strncmp(cmd_start, "printenv", 4) == 0 ){
-        char* arg1 = strtok(NULL, WHITESPACE);
-        // printf("arg1 = %s, len = %d\n", arg1, strlen(arg1));
-        const char* env_value = getenv(arg1);
-        if( env_value == NULL ){
-            printf("No environment variable %s\n", arg1);
-        }
-        else{
-            printf("%s=%s\n", arg1, env_value);
-        }
-    }
-    else if( strncmp(cmd_start, "setenv", 4) == 0 ){
-        char* arg1 = strtok(NULL, WHITESPACE);
-        char* arg2 = strtok(NULL, WHITESPACE);
-        // printf("arg1 = %s, len = %d\n", arg1, strlen(arg1));
-        // printf("arg2 = %s, len = %d\n", arg2, strlen(arg2));
-        setenv(arg1, arg2, 1);
-    }
-#endif
-
     return CMD_NORMAL;
-}
-
-/* error output */
-void perr(const char* format, ...){
-    /* print format string to stderr */
-    va_list argptr;
-    va_start(argptr, format);
-    vfprintf(stderr, format, argptr);
-    va_end(argptr);
-}
-
-void perr_and_exit(const char* format, ...){
-    /* print format string to stderr */
-    va_list argptr;
-    va_start(argptr, format);
-    vfprintf(stderr, format, argptr);
-    va_end(argptr);
-    /* exit */
-    exit(EXIT_FAILURE);
 }

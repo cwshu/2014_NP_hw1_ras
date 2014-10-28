@@ -4,7 +4,7 @@ CXX = clang++
 CXXFLAGS = -std=c++11 -g
 
 EXE = ras
-OBJS = ras.o socket.o
+OBJS = ras.o socket.o io_wrapper.o parser.o cstring_more.o
 
 all: ${EXE}
 
@@ -14,7 +14,7 @@ clean:
 ${EXE}: ${OBJS}
 	${CXX} -o $@ ${CXXFLAGS} $^
 
-%.o: %.cpp
+$(OBJS): %.o: %.cpp
 	${CXX} -o $@ ${CXXFLAGS} -c $<
 
 .PHONY: all clean
