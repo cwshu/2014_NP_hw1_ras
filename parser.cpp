@@ -73,15 +73,15 @@ void one_line_cmd::set_fileio_redirect(const char* str, int len){
     char op = str[0];
     str += 1;
     const char* filename = str + strspn(str, WHITESPACE);
-    const char* filename_end = filename + strspn(filename, WHITESPACE);
+    const char* filename_end = filename + strcspn(filename, WHITESPACE);
 
-    if( filename >= str+len-1 ) 
+    if( filename >= str+len-1 )
         perr_and_exit("fileio redirect error:%c%s\n", op, str);
     if( filename_end == NULL || filename_end > str+len-1 )
         filename_end = str+len-1;
 
     int filename_len = filename_end - filename;
-    if( filename_len == 0 ) 
+    if( filename_len == 0 )
         perr_and_exit("fileio redirect error:%c%s\n", op, str);
 
     char filename_cp[256] = {0};
@@ -151,7 +151,7 @@ int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
     char* first_io_idx = strpbrk(current_cmd, FILE_REDIR_CHARS);
     char* io_idx = first_io_idx;
     while( io_idx ){
-        char* next_io_idx = strpbrk(io_idx, FILE_REDIR_CHARS);
+        char* next_io_idx = strpbrk(io_idx+1, FILE_REDIR_CHARS);
         int len;
         if( next_io_idx )
             len = next_io_idx - io_idx;

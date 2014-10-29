@@ -21,7 +21,7 @@ int socket_bind(socketfd_t socketfd, const char* ip_str, int port_hbytes){
 
 socketfd_t socket_accept(socketfd_t socketfd, char* client_ip_str, int* client_port){
     struct sockaddr_in client_addr;
-    size_t client_addr_len = sizeof(struct sockaddr_in);
+    socklen_t client_addr_len = sizeof(struct sockaddr_in);
     int connection_fd = accept(socketfd, (struct sockaddr*)&client_addr, &client_addr_len);
 
     if( connection_fd < 0 )
