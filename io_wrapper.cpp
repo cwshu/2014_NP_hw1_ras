@@ -22,3 +22,17 @@ void perr_and_exit(const char* format, ...){
     /* exit */
     exit(EXIT_FAILURE);
 }
+
+/* write system call */
+int write_all(int fd, const void* buf, size_t count){
+    size_t writen_size = 0;
+    const char* cur_buf = buf;
+    while(writen_size < count){
+        int size = write(fd, buf, count - writen_size);
+        if(size < 0)
+            return size;
+
+        writen_size += size;
+        cur_buf += size;
+    }
+}

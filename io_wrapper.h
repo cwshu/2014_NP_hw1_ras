@@ -4,4 +4,6 @@
 void perr(const char* format, ...);
 void perr_and_exit(const char* format, ...);
 
+int write_all(int fd, const void* buf, size_t count);
+
 #endif
