@@ -11,35 +11,17 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
 
 #include "socket.h"
 #include "io_wrapper.h"
 #include "parser.h"
+#include "pipe_manager.h"
 
 using namespace std;
 
 const char RAS_IP[] = "0.0.0.0";
 const int RAS_PORT = 52000;
-
-struct anony_pipe {
-    int enable;
-    int read_fd;
-    int write_fd;
-    anony_pipe(){
-        enable = 0;
-        read_fd = -1;
-        write_fd = -1;
-    }
-}; 
-
-struct pipe_manager {
-    int cur_pipe;
-    vector<anony_pipe> pipe_array;
-    pipe_manager(){
-        cur_pipe = 0;
-        pipe_array = vector<anony_pipe>(16, anony_pipe());
-    }
-};
 
 struct special_char {
     char c;
@@ -136,45 +118,78 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     /* parsing */
     struct one_line_cmd parsed_cmds;
     parsing_command(&parsed_cmds, command);
-    parsed_cmds.print();
+    // parsed_cmds.print();
 
-#if 0
-    for(int i=0; cmds[cmd_num] != NULL; i++){
-        /* execute command.
-         * manage pipe and io redirection.
-         * if command error, print command and stop this input.
-         */
-        int read_fd = -1, write_fd = -1;
-        if( s_char[cmd_num].c == '|' ){
-            int index = cmd_pipe_manager.cur_pipe + s_char[cmd_num].num;
-            if( index > cmd_pipe_manager.pipe_array.size() ){
-                cmd_pipe_manager.pipe_array.resize(index, anony_pipe());
-            }
-            if( !cmd_pipe_manager.pipe_array[index].enable ){
-                int pipefd[2];
-                pipe(pipefd);
-                cmd_pipe_manager.pipe_array[index].read_fd = pipefd[0];
-                cmd_pipe_manager.pipe_array[index].write_fd = pipefd[1];
-            }
-            write_fd = cmd_pipe_manager.pipe_array[index].write_fd;
+    /* processing command */
+    // cmd_pipe_manager, parsed_cmds
+    int pipe_num[2];
+    anony_pipe client_output_pipe;
+    pipe(pipe_num);
+    client_output_pipe.set_pipe(pipe_num[0], pipe_num[1]);
 
-            if( cmd_pipe_manager.pipe_array[cmd_pipe_manager.cur_pipe].enable )
-                read_fd = cmd_pipe_manager.pipe_array[cmd_pipe_manager.cur_pipe].read_fd;
+    for(int i=0; i<parsed_cmds.cmd_count; i++){
+        /* fd creation (input file) */
+        bool is_file_input = false;
+        int file_input_fd = -1;
+        if( i == 0 ){
+            if( parsed_cmds.input_redirect.kind == REDIR_FILE ){
+                is_file_input = true;
+                file_input_fd = open(parsed_cmds.input_redirect.data.filename, O_RDONLY);
+                if(file_input_fd == -1)
+                    perr_and_exit("open error: %s\n", strerror(errno));
+            }
+        }
+
+        if( is_file_input && cmd_pipe_manager.cmd_has_pipe(0) ){
+            perr_and_exit("ambiguous input redirection");
+        }
+
+        /* fd creation (pipe) */
+        if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
+            int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_num;
+            if( !cmd_pipe_manager.cmd_has_pipe(pipe_index_in_manager) ){
+                cmd_pipe_manager.create_pipe(pipe_index_in_manager);
+            }
         }
 
         int pid = fork();
         if( pid == 0 ){
-            if( read_fd != -1 ) dup2(read_fd, 0);
-            if( write_fd != -1 ) dup2(write_fd, 1);
-            // execvp();
+            /* stdin redirection */
+            if( i == 0 && is_file_input ){
+                dup2(file_input_fd, STDIN_FILENO);
+            }
+            else if( cmd_pipe_manager.cmd_has_pipe(0) ){
+                int input_fd = cmd_pipe_manager.pipe_of_unexecuted_cmds[0].read_fd;
+                dup2(input_fd, STDIN_FILENO);
+            }
+
+            /* stdout/stderr redirection */
+            int output_fd;
+            if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
+                int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_num;
+                output_fd = cmd_pipe_manager.pipe_of_unexecuted_cmds[pipe_index_in_manager].write_fd;
+            }
+            else{
+                output_fd = client_output_pipe.write_fd;
+            }
+            dup2(output_fd, STDOUT_FILENO);
+            dup2(output_fd, STDERR_FILENO);
+
+            execvp(parsed_cmds.cmds[i].executable, parsed_cmds.cmds[i].argv);
         }
-        /*
         else if( pid > 0 ){
-            
+            while(1){
+                char* read_buf[1024+1];
+                int read_size = read(client_output_pipe.read_fd, read_buf, 1024);
+                if(read_size == 0){
+                    break; 
+                }
+                int write_size = write_all(client_socket, read_buf, 1024);
+            }
         }
-        */
-        cmd_pipe_manager.cur_pipe += 1;
+        else{
+            perr_and_exit("fork error: %s\n", strerror(errno));
+        }
     }
-#endif
     return CMD_NORMAL;
 }
