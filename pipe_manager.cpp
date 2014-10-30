@@ -1,72 +1,86 @@
+#include <cstring>
+#include <cerrno>
+
 #include <unistd.h>
 
 #include "pipe_manager.h"
+#include "io_wrapper.h"
 
 /* anony_pipe */
 anony_pipe::anony_pipe(){
     enable = false;
-    read_fd = -1;
-    write_fd = -1;
+    fd_is_closed[0] = false;
+    fd_is_closed[1] = false;
+    fds[0] = -1;
+    fds[1] = -1;
 }
 
-void anony_pipe::set_pipe(int read_fd, int write_fd){
-    this->enable = true;
-    this->read_fd = read_fd;
-    this->write_fd = write_fd;
+int anony_pipe::read_fd(){
+    if(!enable) return ANONY_PIPE_NO_PIPE;
+    if(fd_is_closed[0]) return ANONY_PIPE_FD_CLOSED;
+    return fds[0];
 }
 
-void anony_pipe::disable(){
-    this->enable = false;
+int anony_pipe::write_fd(){
+    if(!enable) return ANONY_PIPE_NO_PIPE;
+    if(fd_is_closed[1]) return ANONY_PIPE_FD_CLOSED;
+    return fds[1];
+}
+
+int anony_pipe::create_pipe(){
+    if(enable) return ANONY_PIPE_PIPE_EXIST;
+    int ret = pipe(fds);
+    if(ret == -1) perr_and_exit("pipe error: %s\n", strerror(errno));
+    enable = true;
+    return ANONY_PIPE_NORMAL;
+}
+
+void anony_pipe::close_read(){
+    if(!enable) return;
+    if(fd_is_closed[0]) return;
+    int ret = close(fds[0]);
+    if(ret == -1) perr_and_exit("close error: %s\n", strerror(errno));
+    fd_is_closed[0] = true;
+}
+
+void anony_pipe::close_write(){
+    if(!enable) return;
+    if(fd_is_closed[1]) return;
+    int ret = close(fds[1]);
+    if(ret == -1) perr_and_exit("close error: %s\n", strerror(errno));
+    fd_is_closed[1] = true;
+}
+
+void anony_pipe::close_pipe(){
+    if(!enable) return;
+    close_read();
+    close_write();
+    enable = false;
 }
 
 /* pipe_manager */
 pipe_manager::pipe_manager(){
     cur_cmd_index = 0;
-    pipe_of_unexecuted_cmds = vector<anony_pipe>(16, anony_pipe());
+    cmd_input_pipes = vector<anony_pipe>(16, anony_pipe());
 }
 
 bool pipe_manager::cmd_has_pipe(int next_n_cmd){
     int cmd_index = cur_cmd_index + next_n_cmd;
-    if( cmd_index+1 > pipe_of_unexecuted_cmds.size() )
+    if( cmd_index+1 > cmd_input_pipes.size() )
         return false;
-    return pipe_of_unexecuted_cmds[cmd_index].enable;
+    return cmd_input_pipes[cmd_index].enable;
 }
 
-pipe_manager_error_code pipe_manager::create_pipe(int next_n_cmd){
-    if( cmd_has_pipe(next_n_cmd) )
-        return __PIPE_MANAGER_PIPE_EXIST__;
-
-    int pipe_num[2];
-    pipe(pipe_num);
-
+anony_pipe& pipe_manager::get_pipe(int next_n_cmd){
     int cmd_index = cur_cmd_index + next_n_cmd;
-    if( cmd_index+1 > pipe_of_unexecuted_cmds.size() )
-        pipe_of_unexecuted_cmds.resize(cmd_index+1);
-
-    pipe_of_unexecuted_cmds[cmd_index].set_pipe(pipe_num[0], pipe_num[1]);
-    return __PIPE_MANAGER_NORMAL__;
-}
-
-pipe_manager_error_code pipe_manager::close_pipe(int next_n_cmd){
-    if( !cmd_has_pipe(next_n_cmd) )
-        return __PIPE_MANAGER_PIPE_UNEXIST__;
-
-    int cmd_index = cur_cmd_index + next_n_cmd;
-    int read_fd = pipe_of_unexecuted_cmds[cmd_index].read_fd;
-    int write_fd = pipe_of_unexecuted_cmds[cmd_index].write_fd;
-    pipe_of_unexecuted_cmds[cmd_index].disable();
-    close(read_fd);
-    close(write_fd);
-
-    return __PIPE_MANAGER_NORMAL__;
+    return cmd_input_pipes[cmd_index];
 }
 
 void pipe_manager::next_pipe(){
-    if( cur_cmd_index+1 > pipe_of_unexecuted_cmds.size() ){
-        pipe_of_unexecuted_cmds.push_back(anony_pipe());
+    if( cur_cmd_index+1 > cmd_input_pipes.size() ){
+        cmd_input_pipes.push_back(anony_pipe());
     }
 
-    close_pipe(0);
+    get_pipe(0).close_pipe();
     cur_cmd_index += 1;
 }
-
