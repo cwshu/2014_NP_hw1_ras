@@ -11,7 +11,7 @@ using namespace std;
 redirect::redirect(){
     kind = REDIR_NONE; 
     memset(data.filename, 0, 256*sizeof(char));
-    data.pipe_num = -1;
+    data.pipe_index_in_manager = -1;
 }
 
 void redirect::set_file_redirect(const char* filename){
@@ -20,9 +20,9 @@ void redirect::set_file_redirect(const char* filename){
     strncpy_add_null(data.filename, filename, len);
 }
 
-void redirect::set_pipe_redirect(int pipe_num){
+void redirect::set_pipe_redirect(int pipe_index_in_manager){
     kind = REDIR_PIPE;
-    data.pipe_num = pipe_num;
+    data.pipe_index_in_manager = pipe_index_in_manager;
 }
 
 /* struct one_cmd */
@@ -113,8 +113,8 @@ void one_line_cmd::add_argv(const char* argument){
     cmds[cmd_count].add_argv(argument);
 }
 
-void one_line_cmd::add_pipe_redirect(int pipe_num){
-    output_redirect[cmd_count].set_pipe_redirect(pipe_num);
+void one_line_cmd::add_pipe_redirect(int pipe_index_in_manager){
+    output_redirect[cmd_count].set_pipe_redirect(pipe_index_in_manager);
 }
 
 void one_line_cmd::print(){
@@ -139,7 +139,7 @@ void one_line_cmd::print(){
         for(int j=0; j<cmds[i].argv_count; j++){
             printf("args: %s\n", cmds[i].argv[j]);
         }
-        printf("pipe_num: %d\n", output_redirect[i].data.pipe_num);
+        printf("pipe_index_in_manager: %d\n", output_redirect[i].data.pipe_index_in_manager);
     }
 }
 
@@ -198,12 +198,12 @@ int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
             if( pipe_str[1] >= '0' && pipe_str[1] <= '9' ){
                 /* |[0-9] => pipe + number */
                 char *end_of_num = NULL;
-                int pipe_num = strtol(pipe_str+1, &end_of_num, 10);
-                if(pipe_num == 0){
+                int pipe_index_in_manager = strtol(pipe_str+1, &end_of_num, 10);
+                if(pipe_index_in_manager == 0){
                     end_of_num[0] = '\0';
                     perr_and_exit("pipe error: %s\n", pipe_str);
                 }
-                parsed_cmd->add_pipe_redirect(pipe_num);
+                parsed_cmd->add_pipe_redirect(pipe_index_in_manager);
                 cmd_after_pipe = end_of_num;
             }
             else{

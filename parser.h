@@ -15,12 +15,12 @@ struct redirect{
     redirect_type kind;
     union {
         char filename[256];
-        int pipe_num;
+        int pipe_index_in_manager;
     } data;
 
     redirect();
     void set_file_redirect(const char* filename);
-    void set_pipe_redirect(int pipe_num);
+    void set_pipe_redirect(int pipe_index_in_manager);
 };
 
 struct one_cmd{
@@ -48,7 +48,7 @@ struct one_line_cmd{
     void next_cmd();
     void add_executable(const char* executable_name);
     void add_argv(const char* argument);
-    void add_pipe_redirect(int pipe_num);
+    void add_pipe_redirect(int pipe_index_in_manager);
 
     void print();
 };
