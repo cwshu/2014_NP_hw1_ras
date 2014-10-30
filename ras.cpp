@@ -23,21 +23,18 @@ using namespace std;
 
 const char RAS_IP[] = "0.0.0.0";
 const int RAS_DEFAULT_PORT = 52000;
-
-struct special_char {
-    char c;
-    int num;
-    special_char(){
-        c = 0;
-        num = 0;
-    }
-};
+const int MAX_CMD_SIZE = 65536;
 
 void ras_service(socketfd_t client_socket);
 int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
-const int CMD_NORMAL = 0, CMD_EXIT = 1;
-void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket);
+    const int CMD_NORMAL = 0, CMD_EXIT = 1;
 bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket);
+void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket);
+
+void ras_shell_init();
+void print_welcome_msg(socketfd_t client_socket);
+
+int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket);
 
 int main(int argc, char** argv){
     /* listening RAS_PORT first */
@@ -70,30 +67,21 @@ int main(int argc, char** argv){
     return 0;
 }
 
-const int MAX_CMD_SIZE = 65536;
 void ras_service(socketfd_t client_socket){
     /* client is connect to server, this function do ras service to client */
     char cmd_buf[MAX_CMD_SIZE+1] = {0};
     int cmd_size = 0;
     pipe_manager cmd_pipe_manager;
 
+    ras_shell_init();
+    print_welcome_msg(client_socket);
+
     while(1){
         write_all(client_socket, "% ", 2);
 
-        if(cmd_size == MAX_CMD_SIZE){
-            /* command too long */
-            const char err_msg[] = "command too long.\n";
-            send(client_socket, err_msg, strlen(err_msg), 0);
-            perr(err_msg);
-            cmd_size = 0;
-        }
-            
-        int recv_size = recv(client_socket, cmd_buf+cmd_size, MAX_CMD_SIZE-recv_size, 0);
-        if( recv_size == 0 )
-            /* client is closing connection */
+        int recv_size = read_cmd_from_socket_and_check_overflow(cmd_buf, cmd_size, client_socket);
+        if(recv_size == 0)
             break;
-        cmd_size += recv_size; 
-        cmd_buf[cmd_size] = '\0';
 
         char* cur_cmd_head = cmd_buf;
         char* newline_char;
@@ -126,7 +114,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     /* parsing */
     struct one_line_cmd parsed_cmds;
     parsing_command(&parsed_cmds, command);
-    // parsed_cmds.print();
+    parsed_cmds.print();
 
     /* processing command */
     bool is_internal = is_internal_command_and_run(parsed_cmds.cmds[0], client_socket);
@@ -212,6 +200,24 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     return CMD_NORMAL;
 }
 
+bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket){
+    if( strncmp(cmd.executable, "exit", 4) == 0 ){
+        exit(EXIT_SUCCESS);
+    }
+    else if( strncmp(cmd.executable, "printenv", 8) == 0 ){
+        char tmp[1024];
+        int size = sprintf(tmp, "%s\n", getenv(cmd.argv[1]));
+        write_all(client_socket, tmp, size);
+    }
+    else if( strncmp(cmd.executable, "setenv", 6) == 0 ){
+        setenv(cmd.argv[1], cmd.argv[2], 1);
+    }
+    else{
+        return false;
+    }
+    return true;
+}
+
 void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket){
     child_output_pipe.close_write();
     while(1){
@@ -229,20 +235,48 @@ void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t clie
     }
 }
 
-bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket){
-    if( strncmp(cmd.executable, "exit", 4) == 0 ){
-        exit(EXIT_SUCCESS);
+void ras_shell_init(){
+    char ras_dir[1024+1];
+    char* home_dir = getenv("HOME");
+    if(!home_dir)
+        perr_and_exit("Error: No HOME enviroment variable\n");
+
+    sprintf(ras_dir, "%s/ras/", home_dir);
+    int ret = chdir(ras_dir);
+    if(ret == -1)
+        perr_and_exit("chdir error: %s\n", strerror(errno));
+}
+
+void print_welcome_msg(socketfd_t client_socket){
+    char msg1[] = "****************************************\n";
+    char msg2[] = "** Welcome to the information server. **\n";
+    char msg3[] = "****************************************\n";
+
+    write_all(client_socket, msg1, strlen(msg1));
+    write_all(client_socket, msg2, strlen(msg2));
+    write_all(client_socket, msg3, strlen(msg3));
+}
+
+int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket){
+    /* return read size */
+    if(cmd_size == MAX_CMD_SIZE){
+        /* command too long */
+        const char err_msg[] = "command too long.\n";
+        write_all(client_socket, err_msg, strlen(err_msg));
+        perr(err_msg);
+        cmd_size = 0;
     }
-    else if( strncmp(cmd.executable, "printenv", 8) == 0 ){
-        char tmp[1024];
-        int size = sprintf(tmp, "%s\n", getenv(cmd.argv[1]));
-        write_all(client_socket, tmp, size);
+        
+    int recv_size = 0;
+    recv_size = read(client_socket, cmd_buf+cmd_size, MAX_CMD_SIZE-cmd_size);
+    if( recv_size == 0 ){
+        /* client is closing connection */
+        return recv_size;
     }
-    else if( strncmp(cmd.executable, "setenv", 6) == 0 ){
-        setenv(cmd.argv[1], cmd.argv[2], 1);
+    else if( recv_size == -1 ){
+        perr_and_exit("read error: %s\n", strerror(errno));
     }
-    else{
-        return false;
-    }
-    return true;
+    cmd_size += recv_size; 
+    cmd_buf[cmd_size] = '\0';
+    return recv_size;
 }
