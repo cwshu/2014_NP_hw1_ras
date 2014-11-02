@@ -24,7 +24,8 @@ using namespace std;
 
 const char RAS_IP[] = "0.0.0.0";
 const int RAS_DEFAULT_PORT = 52000;
-const int MAX_CMD_SIZE = 65536;
+const int MAX_ONELINE_CMD_SIZE = 65536;
+const int MAX_CMD_SIZE = 256;
 
 void ras_service(socketfd_t client_socket);
 void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
@@ -71,7 +72,7 @@ int main(int argc, char** argv){
 
 void ras_service(socketfd_t client_socket){
     /* client is connect to server, this function do ras service to client */
-    char cmd_buf[MAX_CMD_SIZE+1] = {0};
+    char cmd_buf[MAX_ONELINE_CMD_SIZE+1] = {0};
     int cmd_size = 0;
     pipe_manager cmd_pipe_manager;
 
@@ -205,8 +206,8 @@ void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const
             execvp(parsed_cmds.cmds[i].executable, parsed_cmds.cmds[i].argv);
 
             /* exec error: print "Unknown command [command_name]" */
-            char unknown_cmd[512] = "";
-            int unknown_cmd_size = snprintf(unknown_cmd, 512, "Unknown command: [%s].\n", parsed_cmds.cmds[i].executable);
+            char unknown_cmd[MAX_CMD_SIZE+128] = "";
+            int unknown_cmd_size = snprintf(unknown_cmd, MAX_CMD_SIZE+128, "Unknown command: [%s].\n", parsed_cmds.cmds[i].executable);
             write(child_output_pipe.write_fd(), unknown_cmd, unknown_cmd_size);
             exit(EXIT_FAILURE);
         }
@@ -248,8 +249,8 @@ bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket){
         exit(EXIT_SUCCESS);
     }
     else if( strncmp(cmd.executable, "printenv", 8) == 0 ){
-        char tmp[1024];
-        int size = sprintf(tmp, "%s=%s\n", cmd.argv[1], getenv(cmd.argv[1]));
+        char tmp[1024+1];
+        int size = snprintf(tmp, 1024, "%s=%s\n", cmd.argv[1], getenv(cmd.argv[1]));
         write_all(client_socket, tmp, size);
     }
     else if( strncmp(cmd.executable, "setenv", 6) == 0 ){
@@ -284,7 +285,7 @@ void ras_shell_init(){
     if(!home_dir)
         error_print_and_exit("Error: No HOME enviroment variable\n");
 
-    sprintf(ras_dir, "%s/ras/", home_dir);
+    snprintf(ras_dir, 1024, "%s/ras/", home_dir);
     int ret = chdir(ras_dir);
     if(ret == -1)
         perror_and_exit("chdir error");
@@ -348,7 +349,7 @@ void print_welcome_msg(socketfd_t client_socket){
 
 int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket){
     /* return read size */
-    if(cmd_size == MAX_CMD_SIZE){
+    if(cmd_size == MAX_ONELINE_CMD_SIZE){
         /* command too long */
         const char err_msg[] = "command too long.\n";
         write_all(client_socket, err_msg, strlen(err_msg));
@@ -357,7 +358,7 @@ int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socket
     }
         
     int recv_size = 0;
-    recv_size = read(client_socket, cmd_buf+cmd_size, MAX_CMD_SIZE-cmd_size);
+    recv_size = read(client_socket, cmd_buf+cmd_size, MAX_ONELINE_CMD_SIZE-cmd_size);
     if( recv_size == 0 ){
         /* client is closing connection */
         return recv_size;
