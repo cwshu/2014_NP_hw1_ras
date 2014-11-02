@@ -231,7 +231,7 @@ bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket){
     }
     else if( strncmp(cmd.executable, "printenv", 8) == 0 ){
         char tmp[1024];
-        int size = sprintf(tmp, "%s\n", getenv(cmd.argv[1]));
+        int size = sprintf(tmp, "%s=%s\n", cmd.argv[1], getenv(cmd.argv[1]));
         write_all(client_socket, tmp, size);
     }
     else if( strncmp(cmd.executable, "setenv", 6) == 0 ){
@@ -271,7 +271,7 @@ void ras_shell_init(){
     if(ret == -1)
         perror_and_exit("chdir error");
 
-    ret = setenv("PATH", "bin/", 1);
+    ret = setenv("PATH", "bin:.", 1);
     if(ret == -1)
         perror_and_exit("setenv error");
 }
