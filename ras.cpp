@@ -270,6 +270,10 @@ void ras_shell_init(){
     int ret = chdir(ras_dir);
     if(ret == -1)
         perror_and_exit("chdir error");
+
+    ret = setenv("PATH", "bin/", 1);
+    if(ret == -1)
+        perror_and_exit("setenv error");
 }
 
 void print_welcome_msg(socketfd_t client_socket){
