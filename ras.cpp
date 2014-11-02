@@ -173,7 +173,6 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
             /* stdin redirection */
             if( i == 0 && is_file_input ){
                 dup2(file_input_fd, STDIN_FILENO);
-                close(file_input_fd);
             }
             else if( cmd_pipe_manager.cmd_has_pipe(0) ){
                 anony_pipe& input_pipe = cmd_pipe_manager.get_pipe(0);
@@ -185,24 +184,27 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
             /* stdout redirection */
             if( i == parsed_cmds.cmd_count-1 && is_file_output ){
                 dup2(file_output_fd, STDOUT_FILENO);
-                close(file_output_fd);
             }
             else if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
                 int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_index_in_manager;
                 anony_pipe& output_pipe = cmd_pipe_manager.get_pipe(pipe_index_in_manager);
                 int output_fd = output_pipe.write_fd();
                 dup2(output_fd, STDOUT_FILENO);
-                output_pipe.close_write();
             }
             else{
                 int output_fd = child_output_pipe.write_fd();
                 dup2(output_fd, STDOUT_FILENO);
-                close(output_fd);
             }
             
             /* stderr redirection */
             dup2(child_output_pipe.write_fd(), STDERR_FILENO);
             execvp(parsed_cmds.cmds[i].executable, parsed_cmds.cmds[i].argv);
+
+            /* exec error: print "Unknown command [command_name]" */
+            char unknown_cmd[512] = "";
+            int unknown_cmd_size = snprintf(unknown_cmd, 512, "Unknown command: [%s].\n", parsed_cmds.cmds[i].executable);
+            write(child_output_pipe.write_fd(), unknown_cmd, unknown_cmd_size);
+            exit(EXIT_FAILURE);
         }
         else if(pid > 0){
             if( cmd_pipe_manager.cmd_has_pipe(0) ){
@@ -280,10 +282,52 @@ void print_welcome_msg(socketfd_t client_socket){
     char msg1[] = "****************************************\n";
     char msg2[] = "** Welcome to the information server. **\n";
     char msg3[] = "****************************************\n";
+    /*
+    char* msg4 = new char [65536];
+    snprintf(msg4, 65535, "** You are in the directory, %s/ras/.\n", getenv("HOME"));
+    char msg5[] = "** This directory will be under \"/\", in this system.\n";
+    char msg6[] = "** This directory includes the following executable programs.\n";
+    char msg7[] = "**\n";
+    char msg8[] = "**    bin/\n";
+    char msg9[] = "**    test.html    (test file)\n";
+    char msg10[] = "**\n";
+    char msg11[] = "** The directory bin/ includes:\n";
+    char msg12[] = "**    cat\n";
+    char msg13[] = "**    ls\n";
+    char msg14[] = "**    removetag         (Remove HTML tags.)\n";
+    char msg15[] = "**    removetag0        (Remove HTML tags with error message.)\n";
+    char msg16[] = "**    number            (Add a number in each line.)\n";
+    char msg17[] = "**\n";
+    char msg18[] = "** In addition, the following two commands are supported by ras.\n";
+    char msg19[] = "**    setenv\n";
+    char msg20[] = "**    printenv\n";
+    char msg21[] = "**\n";
+    */
 
     write_all(client_socket, msg1, strlen(msg1));
     write_all(client_socket, msg2, strlen(msg2));
     write_all(client_socket, msg3, strlen(msg3));
+    /*
+    write_all(client_socket, msg4, strlen(msg4));
+    write_all(client_socket, msg5, strlen(msg5));
+    write_all(client_socket, msg6, strlen(msg6));
+    write_all(client_socket, msg7, strlen(msg7));
+    write_all(client_socket, msg8, strlen(msg8));
+    write_all(client_socket, msg9, strlen(msg9));
+    write_all(client_socket, msg10, strlen(msg10));
+    write_all(client_socket, msg11, strlen(msg11));
+    write_all(client_socket, msg12, strlen(msg12));
+    write_all(client_socket, msg13, strlen(msg13));
+    write_all(client_socket, msg14, strlen(msg14));
+    write_all(client_socket, msg15, strlen(msg15));
+    write_all(client_socket, msg16, strlen(msg16));
+    write_all(client_socket, msg17, strlen(msg17));
+    write_all(client_socket, msg18, strlen(msg18));
+    write_all(client_socket, msg19, strlen(msg19));
+    write_all(client_socket, msg20, strlen(msg20));
+    write_all(client_socket, msg21, strlen(msg21));
+    delete [] msg4;
+    */
 }
 
 int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket){
