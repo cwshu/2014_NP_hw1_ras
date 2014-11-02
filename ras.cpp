@@ -138,13 +138,29 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
                 if(file_input_fd == -1)
                     perror_and_exit("open error");
             }
+
+            if( is_file_input && cmd_pipe_manager.cmd_has_pipe(0) ){
+                error_print_and_exit("ambiguous input redirection");
+            }
         }
 
-        if( is_file_input && cmd_pipe_manager.cmd_has_pipe(0) ){
-            error_print_and_exit("ambiguous input redirection");
+        /* fd creation (output to pipe or output to file) */
+        int is_file_output = false;
+        int file_output_fd = -1;
+        if( i == parsed_cmds.cmd_count-1 ){
+            /* last command of line, check output file redirection */
+            if( parsed_cmds.last_output_redirect.kind == REDIR_FILE ){
+                is_file_output = true;
+                file_output_fd = open(parsed_cmds.last_output_redirect.data.filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);
+                if(file_output_fd == -1)
+                    perror_and_exit("open error");
+            }
+
+            if( is_file_output && cmd_pipe_manager.cmd_has_pipe(parsed_cmds.cmd_count-1) ){
+                error_print_and_exit("ambiguous output redirection");
+            }
         }
 
-        /* fd creation (pipe) */
         if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
             int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_index_in_manager;
             if( !cmd_pipe_manager.cmd_has_pipe(pipe_index_in_manager) ){
@@ -167,7 +183,11 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
             }
 
             /* stdout redirection */
-            if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
+            if( i == parsed_cmds.cmd_count-1 && is_file_output ){
+                dup2(file_output_fd, STDOUT_FILENO);
+                close(file_output_fd);
+            }
+            else if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
                 int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_index_in_manager;
                 anony_pipe& output_pipe = cmd_pipe_manager.get_pipe(pipe_index_in_manager);
                 int output_fd = output_pipe.write_fd();
