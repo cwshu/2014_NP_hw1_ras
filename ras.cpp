@@ -18,6 +18,7 @@
 #include "io_wrapper.h"
 #include "parser.h"
 #include "pipe_manager.h"
+#include "cstring_more.h"
 
 using namespace std;
 
@@ -28,13 +29,14 @@ const int MAX_CMD_SIZE = 65536;
 void ras_service(socketfd_t client_socket);
 int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
-bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket);
-void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket);
 
+/* ras_service sub functions */
 void ras_shell_init();
 void print_welcome_msg(socketfd_t client_socket);
-
 int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket);
+/* execute_cmd sub functions */
+bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket);
+void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket);
 
 int main(int argc, char** argv){
     /* listening RAS_PORT first */
@@ -108,8 +110,8 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
         return CMD_NORMAL;
-    char* command = (char*) malloc(cmd_len);
-    strncpy(command, origin_command, strlen(origin_command));
+    char* command = new char [cmd_len+1];
+    strncpy_add_null(command, origin_command, strlen(origin_command));
 
     /* parsing */
     struct one_line_cmd parsed_cmds;
@@ -161,7 +163,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
                 anony_pipe& input_pipe = cmd_pipe_manager.get_pipe(0);
                 int input_fd = input_pipe.read_fd();
                 dup2(input_fd, STDIN_FILENO);
-                input_pipe.close_read();
+                input_pipe.close_pipe();
             }
 
             /* stdout redirection */
@@ -191,6 +193,9 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
         else{
             perr_and_exit("fork error: %s\n", strerror(errno));
         }
+
+        /* run the next command in one-line-command */
+        cmd_pipe_manager.next_pipe();
     }
     for(int i=0; i<parsed_cmds.cmd_count; i++){
         wait(NULL);

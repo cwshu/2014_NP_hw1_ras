@@ -47,7 +47,7 @@ void one_cmd::add_executable(const char* executable_name){
 
 void one_cmd::add_argv(const char* argument){
     int len = strlen(argument);
-    argv[argv_count] = new char[len];
+    argv[argv_count] = new char[len+1];
     strncpy_add_null(argv[argv_count], argument, len);
     argv_count += 1;
     argv[argv_count] = NULL; /* NULL-terminate for exec */
@@ -191,9 +191,14 @@ int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
                 continue;
             }
 
-            char arg_bef_pipe[256];
-            strncpy_add_null(arg_bef_pipe, argument, pipe_str - argument);
-            parsed_cmd->add_argv(arg_bef_pipe);
+            /* processing pipe and arguments connected with pipe: before pipe and after pipe.
+             * ex. ls -a|grep c , (before, after) = (-a, grep) */
+            if(pipe_str != argument){
+                /* has before pipe argument */
+                char arg_bef_pipe[256];
+                strncpy_add_null(arg_bef_pipe, argument, pipe_str - argument);
+                parsed_cmd->add_argv(arg_bef_pipe);
+            }
             char* cmd_after_pipe = NULL;
             if( pipe_str[1] >= '0' && pipe_str[1] <= '9' ){
                 /* |[0-9] => pipe + number */

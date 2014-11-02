@@ -32,6 +32,8 @@ int anony_pipe::create_pipe(){
     int ret = pipe(fds);
     if(ret == -1) perr_and_exit("pipe error: %s\n", strerror(errno));
     enable = true;
+    fd_is_closed[0] = false;
+    fd_is_closed[1] = false;
     return ANONY_PIPE_NORMAL;
 }
 
@@ -68,11 +70,15 @@ bool pipe_manager::cmd_has_pipe(int next_n_cmd){
     int cmd_index = cur_cmd_index + next_n_cmd;
     if( cmd_index+1 > cmd_input_pipes.size() )
         return false;
+
     return cmd_input_pipes[cmd_index].enable;
 }
 
 anony_pipe& pipe_manager::get_pipe(int next_n_cmd){
     int cmd_index = cur_cmd_index + next_n_cmd;
+    if( cmd_index+1 > cmd_input_pipes.size() )
+        cmd_input_pipes.resize(cmd_index+1);
+
     return cmd_input_pipes[cmd_index];
 }
 
