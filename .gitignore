@@ -4,4 +4,6 @@
 # build target
 ras
 *.o
-commands/bin
+# build target for TA_test
+TA_test/client
+TA_test/commands/bin
