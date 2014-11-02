@@ -76,28 +76,28 @@ void one_line_cmd::set_fileio_redirect(const char* str, int len){
     const char* filename_end = filename + strcspn(filename, WHITESPACE);
 
     if( filename >= str+len-1 )
-        perr_and_exit("fileio redirect error:%c%s\n", op, str);
+        error_print_and_exit("fileio redirect error:%c%s\n", op, str);
     if( filename_end == NULL || filename_end > str+len-1 )
         filename_end = str+len-1;
 
     int filename_len = filename_end - filename;
     if( filename_len == 0 )
-        perr_and_exit("fileio redirect error:%c%s\n", op, str);
+        error_print_and_exit("fileio redirect error:%c%s\n", op, str);
 
     char filename_cp[256] = {0};
     strncpy_add_null(filename_cp, filename, filename_len);
     if( op == '<' ){
         if(input_redirect.kind != REDIR_NONE)
-            perr_and_exit("more than one input redirection error\n");
+            error_print_and_exit("more than one input redirection error\n");
         input_redirect.set_file_redirect(filename_cp);
     }
     else if( op == '>' ){
         if( last_output_redirect.kind != REDIR_NONE )
-            perr_and_exit("more than one output redirection error\n");
+            error_print_and_exit("more than one output redirection error\n");
         last_output_redirect.set_file_redirect(filename_cp);
     }
     else{
-        perr_and_exit("io_redirection mistake op %c\n", op);
+        error_print_and_exit("io_redirection mistake op %c\n", op);
     }
 }
 
@@ -206,7 +206,7 @@ int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
                 int pipe_index_in_manager = strtol(pipe_str+1, &end_of_num, 10);
                 if(pipe_index_in_manager == 0){
                     end_of_num[0] = '\0';
-                    perr_and_exit("pipe error: %s\n", pipe_str);
+                    error_print_and_exit("pipe error: %s\n", pipe_str);
                 }
                 parsed_cmd->add_pipe_redirect(pipe_index_in_manager);
                 cmd_after_pipe = end_of_num;

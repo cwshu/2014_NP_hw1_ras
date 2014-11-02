@@ -30,7 +30,7 @@ int anony_pipe::write_fd(){
 int anony_pipe::create_pipe(){
     if(enable) return ANONY_PIPE_PIPE_EXIST;
     int ret = pipe(fds);
-    if(ret == -1) perr_and_exit("pipe error: %s\n", strerror(errno));
+    if(ret == -1) perror_and_exit("pipe error");
     enable = true;
     fd_is_closed[0] = false;
     fd_is_closed[1] = false;
@@ -41,7 +41,7 @@ void anony_pipe::close_read(){
     if(!enable) return;
     if(fd_is_closed[0]) return;
     int ret = close(fds[0]);
-    if(ret == -1) perr_and_exit("close error: %s\n", strerror(errno));
+    if(ret == -1) perror_and_exit("close error");
     fd_is_closed[0] = true;
 }
 
@@ -49,7 +49,7 @@ void anony_pipe::close_write(){
     if(!enable) return;
     if(fd_is_closed[1]) return;
     int ret = close(fds[1]);
-    if(ret == -1) perr_and_exit("close error: %s\n", strerror(errno));
+    if(ret == -1) perror_and_exit("close error");
     fd_is_closed[1] = true;
 }
 

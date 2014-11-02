@@ -7,7 +7,12 @@
 #include "io_wrapper.h"
 
 /* error output */
-void perr(const char* format, ...){
+void perror_and_exit(const char* str){
+    perror(str);
+    exit(EXIT_FAILURE);
+}
+
+void error_print(const char* format ... ){
     /* print format string to stderr */
     va_list argptr;
     va_start(argptr, format);
@@ -15,7 +20,7 @@ void perr(const char* format, ...){
     va_end(argptr);
 }
 
-void perr_and_exit(const char* format, ...){
+void error_print_and_exit(const char* format ... ){
     /* print format string to stderr */
     va_list argptr;
     va_start(argptr, format);

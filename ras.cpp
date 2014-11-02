@@ -48,11 +48,11 @@ int main(int argc, char** argv){
     
     ras_listen_socket = socket(AF_INET, SOCK_STREAM, 0);
     if( ras_listen_socket < 0 )
-        perr_and_exit("can't create socket: %s", strerror(errno));
+        perror_and_exit("can't create socket");
     if( socket_bind(ras_listen_socket, RAS_IP, ras_port) < 0 )
-        perr_and_exit("can't bind: %s", strerror(errno));
+        perror_and_exit("can't bind");
     if( listen(ras_listen_socket, 1) < 0)
-        perr_and_exit("can't listen: %s", strerror(errno));
+        perror_and_exit("can't listen");
 
     while(1){
         socketfd_t connection_socket;
@@ -61,7 +61,7 @@ int main(int argc, char** argv){
 
         connection_socket = socket_accept(ras_listen_socket, client_ip, &client_port);
         if( connection_socket < 0 )
-            perr_and_exit("can't accept: %s", strerror(errno));
+            perror_and_exit("can't accept");
 
         ras_service(connection_socket);
         close(connection_socket);
@@ -136,12 +136,12 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
                 is_file_input = true;
                 file_input_fd = open(parsed_cmds.input_redirect.data.filename, O_RDONLY);
                 if(file_input_fd == -1)
-                    perr_and_exit("open error: %s\n", strerror(errno));
+                    perror_and_exit("open error");
             }
         }
 
         if( is_file_input && cmd_pipe_manager.cmd_has_pipe(0) ){
-            perr_and_exit("ambiguous input redirection");
+            error_print_and_exit("ambiguous input redirection");
         }
 
         /* fd creation (pipe) */
@@ -191,7 +191,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
             }
         }   
         else{
-            perr_and_exit("fork error: %s\n", strerror(errno));
+            perror_and_exit("fork error");
         }
 
         /* run the next command in one-line-command */
@@ -232,7 +232,7 @@ void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t clie
             break; 
         }
         else if(read_size < 0){
-            perr_and_exit("read child pipe error: %s\n", strerror(errno));
+            perror_and_exit("read child pipe error");
         }
         else{
             int write_size = write_all(client_socket, read_buf, read_size);
@@ -244,12 +244,12 @@ void ras_shell_init(){
     char ras_dir[1024+1];
     char* home_dir = getenv("HOME");
     if(!home_dir)
-        perr_and_exit("Error: No HOME enviroment variable\n");
+        error_print_and_exit("Error: No HOME enviroment variable\n");
 
     sprintf(ras_dir, "%s/ras/", home_dir);
     int ret = chdir(ras_dir);
     if(ret == -1)
-        perr_and_exit("chdir error: %s\n", strerror(errno));
+        perror_and_exit("chdir error");
 }
 
 void print_welcome_msg(socketfd_t client_socket){
@@ -268,7 +268,7 @@ int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socket
         /* command too long */
         const char err_msg[] = "command too long.\n";
         write_all(client_socket, err_msg, strlen(err_msg));
-        perr(err_msg);
+        error_print(err_msg);
         cmd_size = 0;
     }
         
@@ -279,7 +279,7 @@ int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socket
         return recv_size;
     }
     else if( recv_size == -1 ){
-        perr_and_exit("read error: %s\n", strerror(errno));
+        perror_and_exit("read error");
     }
     cmd_size += recv_size; 
     cmd_buf[cmd_size] = '\0';
