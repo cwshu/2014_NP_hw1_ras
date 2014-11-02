@@ -27,7 +27,7 @@ const int RAS_DEFAULT_PORT = 52000;
 const int MAX_CMD_SIZE = 65536;
 
 void ras_service(socketfd_t client_socket);
-int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
+void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
 
 /* ras_service sub functions */
@@ -90,8 +90,7 @@ void ras_service(socketfd_t client_socket){
         while( (newline_char = strchr(cur_cmd_head, '\n')) != NULL ){
             /* split command and execute it. */
             newline_char[0] = '\0';
-            if( execute_cmd(client_socket, cmd_pipe_manager, cur_cmd_head) == CMD_EXIT )
-                return;
+            execute_cmd(client_socket, cmd_pipe_manager, cur_cmd_head);
             cur_cmd_head = newline_char+1;
         }
 
@@ -105,11 +104,11 @@ void ras_service(socketfd_t client_socket){
 }
 
 
-int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command){
+void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command){
     /* parsing and execute shell command */
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
-        return CMD_NORMAL;
+        return;
     char* command = new char [cmd_len+1];
     strncpy_add_null(command, origin_command, strlen(origin_command));
 
@@ -121,7 +120,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     /* processing command */
     bool is_internal = is_internal_command_and_run(parsed_cmds.cmds[0], client_socket);
     if(is_internal)
-        return CMD_NORMAL;
+        return;
     // cmd_pipe_manager, parsed_cmds
     anony_pipe child_output_pipe;
     child_output_pipe.create_pipe();
@@ -241,7 +240,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     }
     processing_child_output_data(child_output_pipe, client_socket);
 
-    return CMD_NORMAL;
+    return;
 }
 
 bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket){
