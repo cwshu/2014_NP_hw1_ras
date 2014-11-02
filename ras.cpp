@@ -180,6 +180,11 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
                 dup2(input_fd, STDIN_FILENO);
                 input_pipe.close_pipe();
             }
+            /*
+            else{
+                dup2(client_socket, STDIN_FILENO);
+            }
+            */
 
             /* stdout redirection */
             if( i == parsed_cmds.cmd_count-1 && is_file_output ){
@@ -208,19 +213,31 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
         }
         else if(pid > 0){
             if( cmd_pipe_manager.cmd_has_pipe(0) ){
-            /* if child stdin use pipe, close it(especially write end) in parent. */
-                cmd_pipe_manager.get_pipe(0).close_pipe();
+            /* if child stdin use pipe, close write end in parent. */
+                cmd_pipe_manager.get_pipe(0).close_write();
+            }
+            int child_status;
+            wait(&child_status);
+            /* child status */
+            if( WIFEXITED(child_status) ){
+                int exit_status = WEXITSTATUS(child_status); 
+                // printf("exit_status: %d\n", exit_status);
+                if( exit_status == 0 ){
+                    /* correct exit */
+                    cmd_pipe_manager.get_pipe(0).close_pipe();
+                    /* run the next command in one-line-command */
+                    cmd_pipe_manager.next_pipe();
+                }
+                else{
+                    /* error cmd, finish this one-line-command */
+                    break;
+                }
             }
         }   
         else{
             perror_and_exit("fork error");
         }
 
-        /* run the next command in one-line-command */
-        cmd_pipe_manager.next_pipe();
-    }
-    for(int i=0; i<parsed_cmds.cmd_count; i++){
-        wait(NULL);
     }
     processing_child_output_data(child_output_pipe, client_socket);
 
