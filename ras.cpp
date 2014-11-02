@@ -28,7 +28,7 @@ const int MAX_ONELINE_CMD_SIZE = 65536;
 const int MAX_CMD_SIZE = 256;
 
 void ras_service(socketfd_t client_socket);
-void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
+int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
 
 /* ras_service sub functions */
@@ -36,8 +36,14 @@ void ras_shell_init();
 void print_welcome_msg(socketfd_t client_socket);
 int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket);
 /* execute_cmd sub functions */
-bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket);
+bool is_internal_command_and_run(bool& is_exit, one_cmd& cmd, socketfd_t client_socket);
 void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket);
+
+void sigchid_waitfor_child(int sig){ 
+    int status;
+    pid_t child;
+    while( (child = waitpid(-1, &status, WNOHANG)) > 0 );
+}
 
 int main(int argc, char** argv){
     /* listening RAS_PORT first */
@@ -55,17 +61,39 @@ int main(int argc, char** argv){
     if( listen(ras_listen_socket, 1) < 0)
         perror_and_exit("can't listen");
 
+    signal(SIGCHLD, sigchid_waitfor_child);
+
     while(1){
         socketfd_t connection_socket;
         char client_ip[IP_MAX_LEN] = {'\0'};
         int client_port;
 
         connection_socket = socket_accept(ras_listen_socket, client_ip, &client_port);
-        if( connection_socket < 0 )
-            perror_and_exit("can't accept");
+        if( connection_socket < 0 ){
+            perror("can't accept");
+            continue;
+        }
 
-        ras_service(connection_socket);
-        close(connection_socket);
+        int child_pid = fork();
+        if( child_pid == 0 ){
+            int ret = close(ras_listen_socket);
+            if( ret < 0 )
+                perror("can't close ras_listen_socket");
+
+            ras_service(connection_socket);
+
+            ret = close(connection_socket);
+            if( ret < 0 )
+                perror("can't close connection_socket");
+            // printf("connection_socket: %d\n", connection_socket);
+            exit(EXIT_SUCCESS);
+        }
+        else if( child_pid > 0 ){
+            close(connection_socket);
+        }
+        else {
+            perror("can't fork");
+        }
     }
     return 0;
 }
@@ -91,7 +119,8 @@ void ras_service(socketfd_t client_socket){
         while( (newline_char = strchr(cur_cmd_head, '\n')) != NULL ){
             /* split command and execute it. */
             newline_char[0] = '\0';
-            execute_cmd(client_socket, cmd_pipe_manager, cur_cmd_head);
+            if( execute_cmd(client_socket, cmd_pipe_manager, cur_cmd_head) == CMD_EXIT )
+                return;
             cur_cmd_head = newline_char+1;
         }
 
@@ -105,11 +134,11 @@ void ras_service(socketfd_t client_socket){
 }
 
 
-void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command){
+int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command){
     /* parsing and execute shell command */
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
-        return;
+        return CMD_NORMAL;
     char* command = new char [cmd_len+1];
     strncpy_add_null(command, origin_command, strlen(origin_command));
 
@@ -119,9 +148,11 @@ void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const
     parsed_cmds.print();
 
     /* processing command */
-    bool is_internal = is_internal_command_and_run(parsed_cmds.cmds[0], client_socket);
-    if(is_internal)
-        return;
+    bool is_exit = false;
+    bool is_internal = is_internal_command_and_run(is_exit, parsed_cmds.cmds[0], client_socket);
+    if( is_exit ) return CMD_EXIT;
+    if( is_internal ) return CMD_NORMAL;
+
     // cmd_pipe_manager, parsed_cmds
     anony_pipe child_output_pipe;
     child_output_pipe.create_pipe();
@@ -241,12 +272,12 @@ void execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const
     }
     processing_child_output_data(child_output_pipe, client_socket);
 
-    return;
+    return CMD_NORMAL;
 }
 
-bool is_internal_command_and_run(one_cmd& cmd, socketfd_t client_socket){
+bool is_internal_command_and_run(bool& is_exit, one_cmd& cmd, socketfd_t client_socket){
     if( strncmp(cmd.executable, "exit", 4) == 0 ){
-        exit(EXIT_SUCCESS);
+        is_exit = true;
     }
     else if( strncmp(cmd.executable, "printenv", 8) == 0 ){
         char tmp[1024+1];
