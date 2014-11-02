@@ -17,4 +17,8 @@ ${EXE}: ${OBJS}
 $(OBJS): %.o: %.cpp
 	${CXX} -o $@ ${CXXFLAGS} -c $<
 
-.PHONY: all clean
+# build TA testing environment
+TA_test:
+	make all install -C $@
+
+.PHONY: all clean TA_test
