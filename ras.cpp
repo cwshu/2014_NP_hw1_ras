@@ -57,6 +57,10 @@ int main(int argc, char** argv){
     ras_listen_socket = socket(AF_INET, SOCK_STREAM, 0);
     if( ras_listen_socket < 0 )
         perror_and_exit("can't create socket");
+
+    // int on = 1;
+    // setsockopt(ras_listen_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&on, sizeof(on));
+
     if( socket_bind(ras_listen_socket, RAS_IP, ras_port) < 0 )
         perror_and_exit("can't bind");
     if( listen(ras_listen_socket, 1) < 0)

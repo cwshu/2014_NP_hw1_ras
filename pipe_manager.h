@@ -10,7 +10,7 @@ const int ANONY_PIPE_FD_CLOSED  = -1;
 const int ANONY_PIPE_NO_PIPE    = -2;
 const int ANONY_PIPE_PIPE_EXIST = -4;
 
-struct anony_pipe {
+struct anony_pipe{
     bool enable;
     bool fd_is_closed[2];
     int fds[2];
@@ -32,7 +32,7 @@ enum pipe_manager_error_code {
     PIPE_MANAGER_PIPE_UNEXIST   = 0x04,
 };*/
 
-struct pipe_manager {
+struct pipe_manager{
     int cur_cmd_index;
     vector<anony_pipe> cmd_input_pipes;
 

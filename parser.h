@@ -37,8 +37,8 @@ struct one_cmd{
 };
 
 struct one_line_cmd{
-    one_cmd cmds[1024];
-    redirect output_redirect[1024]; // must be pipe
+    one_cmd cmds[4096];
+    redirect output_redirect[4096]; // must be pipe
     int cmd_count;
     redirect input_redirect;
     redirect last_output_redirect;
