@@ -143,11 +143,12 @@ void one_line_cmd::print(){
     }
 }
 
-int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
-    char* current_cmd = command;
+int one_line_cmd::parse_one_line_cmd(char* command_str){
+    char* current_cmd = command_str;
 
     current_cmd += strspn(current_cmd, WHITESPACE); /* strip left whitespaces */
 
+    /* parse file io redirection at end of line in command */
     char* first_io_idx = strpbrk(current_cmd, FILE_REDIR_CHARS);
     char* io_idx = first_io_idx;
     while( io_idx ){
@@ -158,36 +159,37 @@ int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
         else
             len = strlen(io_idx);
 
-        parsed_cmd->set_fileio_redirect(io_idx, len);
+        set_fileio_redirect(io_idx, len);
         io_idx = next_io_idx;
     }
 
     if( first_io_idx )
         first_io_idx[0] = '\0';
 
+    /* parsing command and arguments and pipe */
     char* split_str = current_cmd;
     while(1){
         int end_of_cmd = false;
 
-        if( parsed_cmd->cmds[parsed_cmd->cmd_count].argv_count <= 0 ){
+        if( this->cmds[this->cmd_count].argv_count <= 0 ){
             char* exe_name = strtok(split_str, WHITESPACE);
             split_str = NULL;
             if( !exe_name )
                 break;
-            parsed_cmd->add_executable(exe_name);
+            this->add_executable(exe_name);
         }
 
         while(1){
             char* argument = strtok(NULL, WHITESPACE);
             if( !argument ){
-                parsed_cmd->cmd_count += 1;
+                this->cmd_count += 1;
                 end_of_cmd = true;
                 break;
             }
 
             char* pipe_str = strpbrk(argument, "|");
             if( !pipe_str ){
-                parsed_cmd->add_argv(argument);
+                this->add_argv(argument);
                 continue;
             }
 
@@ -197,7 +199,7 @@ int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
                 /* has before pipe argument */
                 char arg_bef_pipe[256];
                 strncpy_add_null(arg_bef_pipe, argument, pipe_str - argument);
-                parsed_cmd->add_argv(arg_bef_pipe);
+                this->add_argv(arg_bef_pipe);
             }
             char* cmd_after_pipe = NULL;
             if( pipe_str[1] >= '0' && pipe_str[1] <= '9' ){
@@ -208,19 +210,19 @@ int parsing_command(struct one_line_cmd* parsed_cmd, char* command){
                     end_of_num[0] = '\0';
                     error_print_and_exit("pipe error: %s\n", pipe_str);
                 }
-                parsed_cmd->add_pipe_redirect(pipe_index_in_manager);
+                this->add_pipe_redirect(pipe_index_in_manager);
                 cmd_after_pipe = end_of_num;
             }
             else{
                 /* only pipe without number */
-                parsed_cmd->add_pipe_redirect(1);
+                this->add_pipe_redirect(1);
                 cmd_after_pipe = pipe_str+1;
             }
-            parsed_cmd->cmd_count += 1;
+            this->cmd_count += 1;
 
             cmd_after_pipe = cmd_after_pipe + strspn(cmd_after_pipe, WHITESPACE);
             if( cmd_after_pipe[0] != '\0' ){
-                parsed_cmd->add_executable(cmd_after_pipe);
+                this->add_executable(cmd_after_pipe);
             }
             break;
         }

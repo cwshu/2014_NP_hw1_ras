@@ -44,15 +44,13 @@ struct one_line_cmd{
     redirect last_output_redirect;
 
     one_line_cmd();
+    int parse_one_line_cmd(char* command);
     void set_fileio_redirect(const char* str, int len);
     void next_cmd();
     void add_executable(const char* executable_name);
     void add_argv(const char* argument);
     void add_pipe_redirect(int pipe_index_in_manager);
-
     void print();
 };
-
-int parsing_command(struct one_line_cmd* parsed_cmd, char* command);
 
 #endif

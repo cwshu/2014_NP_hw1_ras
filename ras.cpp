@@ -145,7 +145,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
 
     /* parsing */
     struct one_line_cmd parsed_cmds;
-    parsing_command(&parsed_cmds, command);
+    parsed_cmds.parse_one_line_cmd(command);
     parsed_cmds.print();
 
     /* processing command */
