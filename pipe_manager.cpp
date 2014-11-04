@@ -6,8 +6,8 @@
 #include "pipe_manager.h"
 #include "io_wrapper.h"
 
-/* anony_pipe */
-anony_pipe::anony_pipe(){
+/* AnonyPipe */
+AnonyPipe::AnonyPipe(){
     enable = false;
     fd_is_closed[0] = false;
     fd_is_closed[1] = false;
@@ -15,19 +15,19 @@ anony_pipe::anony_pipe(){
     fds[1] = -1;
 }
 
-int anony_pipe::read_fd(){
+int AnonyPipe::read_fd(){
     if(!enable) return ANONY_PIPE_NO_PIPE;
     if(fd_is_closed[0]) return ANONY_PIPE_FD_CLOSED;
     return fds[0];
 }
 
-int anony_pipe::write_fd(){
+int AnonyPipe::write_fd(){
     if(!enable) return ANONY_PIPE_NO_PIPE;
     if(fd_is_closed[1]) return ANONY_PIPE_FD_CLOSED;
     return fds[1];
 }
 
-int anony_pipe::create_pipe(){
+int AnonyPipe::create_pipe(){
     if(enable) return ANONY_PIPE_PIPE_EXIST;
     int ret = pipe(fds);
     if(ret == -1) perror_and_exit("pipe error");
@@ -37,7 +37,7 @@ int anony_pipe::create_pipe(){
     return ANONY_PIPE_NORMAL;
 }
 
-void anony_pipe::close_read(){
+void AnonyPipe::close_read(){
     if(!enable) return;
     if(fd_is_closed[0]) return;
     int ret = close(fds[0]);
@@ -45,7 +45,7 @@ void anony_pipe::close_read(){
     fd_is_closed[0] = true;
 }
 
-void anony_pipe::close_write(){
+void AnonyPipe::close_write(){
     if(!enable) return;
     if(fd_is_closed[1]) return;
     int ret = close(fds[1]);
@@ -53,20 +53,20 @@ void anony_pipe::close_write(){
     fd_is_closed[1] = true;
 }
 
-void anony_pipe::close_pipe(){
+void AnonyPipe::close_pipe(){
     if(!enable) return;
     close_read();
     close_write();
     enable = false;
 }
 
-/* pipe_manager */
-pipe_manager::pipe_manager(){
+/* PipeManager */
+PipeManager::PipeManager(){
     cur_cmd_index = 0;
-    cmd_input_pipes = vector<anony_pipe>(16, anony_pipe());
+    cmd_input_pipes = vector<AnonyPipe>(16, AnonyPipe());
 }
 
-bool pipe_manager::cmd_has_pipe(int next_n_cmd){
+bool PipeManager::cmd_has_pipe(int next_n_cmd){
     int cmd_index = cur_cmd_index + next_n_cmd;
     if( cmd_index+1 > cmd_input_pipes.size() )
         return false;
@@ -74,7 +74,7 @@ bool pipe_manager::cmd_has_pipe(int next_n_cmd){
     return cmd_input_pipes[cmd_index].enable;
 }
 
-anony_pipe& pipe_manager::get_pipe(int next_n_cmd){
+AnonyPipe& PipeManager::get_pipe(int next_n_cmd){
     int cmd_index = cur_cmd_index + next_n_cmd;
     if( cmd_index+1 > cmd_input_pipes.size() )
         cmd_input_pipes.resize(cmd_index+1);
@@ -82,9 +82,9 @@ anony_pipe& pipe_manager::get_pipe(int next_n_cmd){
     return cmd_input_pipes[cmd_index];
 }
 
-void pipe_manager::next_pipe(){
+void PipeManager::next_pipe(){
     if( cur_cmd_index+1 > cmd_input_pipes.size() ){
-        cmd_input_pipes.push_back(anony_pipe());
+        cmd_input_pipes.push_back(AnonyPipe());
     }
 
     get_pipe(0).close_pipe();

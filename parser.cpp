@@ -7,45 +7,45 @@
 
 using namespace std;
 
-/* struct redirect */
-redirect::redirect(){
+/* struct Redirection */
+Redirection::Redirection(){
     kind = REDIR_NONE; 
     memset(data.filename, 0, 256*sizeof(char));
     data.pipe_index_in_manager = -1;
 }
 
-void redirect::set_file_redirect(const char* filename){
+void Redirection::set_file_redirect(const char* filename){
     kind = REDIR_FILE;
     int len = strlen(filename);
     strncpy_add_null(data.filename, filename, len);
 }
 
-void redirect::set_pipe_redirect(int pipe_index_in_manager){
+void Redirection::set_pipe_redirect(int pipe_index_in_manager){
     kind = REDIR_PIPE;
     data.pipe_index_in_manager = pipe_index_in_manager;
 }
 
-/* struct one_cmd */
-one_cmd::one_cmd(){
+/* struct SingleCommand */
+SingleCommand::SingleCommand(){
     memset(executable, 0, 256*sizeof(char));
     argv = NULL;
     argv_count = -1;
 }
 
-void one_cmd::argv_array_alloc(int size){
+void SingleCommand::argv_array_alloc(int size){
     argv = new char*[size]; 
     argv_count = 0;
     this->size = size;
 }
 
-void one_cmd::add_executable(const char* executable_name){
+void SingleCommand::add_executable(const char* executable_name){
     int len = strlen(executable_name);
     strncpy_add_null(executable, executable_name, len);
     argv_array_alloc();
     add_argv(executable_name);
 }
 
-void one_cmd::add_argv(const char* argument){
+void SingleCommand::add_argv(const char* argument){
     int len = strlen(argument);
     argv[argv_count] = new char[len+1];
     strncpy_add_null(argv[argv_count], argument, len);
@@ -53,7 +53,7 @@ void one_cmd::add_argv(const char* argument){
     argv[argv_count] = NULL; /* NULL-terminate for exec */
 }
 
-one_cmd::~one_cmd(){
+SingleCommand::~SingleCommand(){
     if( argv ){
         for(int i=0; i<argv_count; i++){
             delete [] argv[i];
@@ -62,14 +62,14 @@ one_cmd::~one_cmd(){
     }
 }
 
-/* struct one_line_cmd */
-one_line_cmd::one_line_cmd(){
+/* struct OneLineCommand */
+OneLineCommand::OneLineCommand(){
     cmd_count = 0;
-    input_redirect = redirect();
-    last_output_redirect = redirect();
+    input_redirect = Redirection();
+    last_output_redirect = Redirection();
 }
 
-void one_line_cmd::set_fileio_redirect(const char* str, int len){
+void OneLineCommand::set_fileio_redirect(const char* str, int len){
     char op = str[0];
     str += 1;
     const char* filename = str + strspn(str, WHITESPACE);
@@ -101,23 +101,23 @@ void one_line_cmd::set_fileio_redirect(const char* str, int len){
     }
 }
 
-void one_line_cmd::next_cmd(){
+void OneLineCommand::next_cmd(){
     cmd_count++;
 }
 
-void one_line_cmd::add_executable(const char* executable_name){
+void OneLineCommand::add_executable(const char* executable_name){
     cmds[cmd_count].add_executable(executable_name);
 }
 
-void one_line_cmd::add_argv(const char* argument){
+void OneLineCommand::add_argv(const char* argument){
     cmds[cmd_count].add_argv(argument);
 }
 
-void one_line_cmd::add_pipe_redirect(int pipe_index_in_manager){
+void OneLineCommand::add_pipe_redirect(int pipe_index_in_manager){
     output_redirect[cmd_count].set_pipe_redirect(pipe_index_in_manager);
 }
 
-void one_line_cmd::print(){
+void OneLineCommand::print(){
     printf("input_redirect: ");
     if(input_redirect.kind == REDIR_NONE){
         printf("None\n");
@@ -143,7 +143,7 @@ void one_line_cmd::print(){
     }
 }
 
-int one_line_cmd::parse_one_line_cmd(char* command_str){
+int OneLineCommand::parse_one_line_cmd(char* command_str){
     char* current_cmd = command_str;
 
     current_cmd += strspn(current_cmd, WHITESPACE); /* strip left whitespaces */

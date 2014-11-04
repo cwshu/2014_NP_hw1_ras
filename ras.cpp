@@ -28,23 +28,23 @@ const int RAS_DEFAULT_PORT = 52000;
 const int MAX_ONELINE_CMD_SIZE = 65536;
 const int MAX_CMD_SIZE = 256;
 
-typedef void (*one_connection_service)(socketfd_t connection_socket); 
+typedef void (*OneConnectionService)(socketfd_t connection_socket); 
 /* for example, telnet_service, http_service, or ras_service in our hw1 */
 
-void start_multiprocess_server(socketfd_t listen_socket, one_connection_service service_function);
+void start_multiprocess_server(socketfd_t listen_socket, OneConnectionService service_function);
 void ras_service(socketfd_t client_socket);
-int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command);
+int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
 
-/* main_service sub functions */
+/* start_multiprocess_server sub functions */
 void sigchid_waitfor_child(int sig);
 /* ras_service sub functions */
 void ras_shell_init();
 void print_welcome_msg(socketfd_t client_socket);
 int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket);
 /* execute_cmd sub functions */
-bool is_internal_command_and_run(bool& is_exit, one_cmd& cmd, socketfd_t client_socket);
-void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket);
+bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket);
+void processing_child_output_data(AnonyPipe& child_output_pipe, socketfd_t client_socket);
 
 int main(int argc, char** argv){
     int ras_port = RAS_DEFAULT_PORT;
@@ -70,7 +70,7 @@ int main(int argc, char** argv){
     return 0;
 }
 
-void start_multiprocess_server(socketfd_t listen_socket, service_func service_function){
+void start_multiprocess_server(socketfd_t listen_socket, OneConnectionService service_function){
     /* wait at receive SIGCHLD, release child resource for multiprocess && concurrent server */
     signal(SIGCHLD, sigchid_waitfor_child);
 
@@ -109,7 +109,7 @@ void ras_service(socketfd_t client_socket){
     /* client is connect to server, this function do ras service to client */
     char cmd_buf[MAX_ONELINE_CMD_SIZE+1] = {0};
     int cmd_size = 0;
-    pipe_manager cmd_pipe_manager;
+    PipeManager cmd_pipe_manager;
 
     ras_shell_init();
     print_welcome_msg(client_socket);
@@ -140,7 +140,7 @@ void ras_service(socketfd_t client_socket){
     }
 }
 
-int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const char* origin_command){
+int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command){
     /* parsing and execute shell command */
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
@@ -149,7 +149,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     strncpy_add_null(command, origin_command, strlen(origin_command));
 
     /* parsing */
-    struct one_line_cmd parsed_cmds;
+    OneLineCommand parsed_cmds;
     parsed_cmds.parse_one_line_cmd(command);
     parsed_cmds.print();
 
@@ -160,7 +160,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
     if( is_internal ) return CMD_NORMAL;
 
     // cmd_pipe_manager, parsed_cmds
-    anony_pipe child_output_pipe;
+    AnonyPipe child_output_pipe;
     child_output_pipe.create_pipe();
     int legal_cmd = 0;
     for(int i=0; i<parsed_cmds.cmd_count; i++){
@@ -212,7 +212,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
                 dup2(file_input_fd, STDIN_FILENO);
             }
             else if( cmd_pipe_manager.cmd_has_pipe(0) ){
-                anony_pipe& input_pipe = cmd_pipe_manager.get_pipe(0);
+                AnonyPipe& input_pipe = cmd_pipe_manager.get_pipe(0);
                 int input_fd = input_pipe.read_fd();
                 dup2(input_fd, STDIN_FILENO);
                 input_pipe.close_pipe();
@@ -229,7 +229,7 @@ int execute_cmd(socketfd_t client_socket, pipe_manager& cmd_pipe_manager, const 
             }
             else if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
                 int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_index_in_manager;
-                anony_pipe& output_pipe = cmd_pipe_manager.get_pipe(pipe_index_in_manager);
+                AnonyPipe& output_pipe = cmd_pipe_manager.get_pipe(pipe_index_in_manager);
                 int output_fd = output_pipe.write_fd();
                 dup2(output_fd, STDOUT_FILENO);
             }
@@ -381,7 +381,7 @@ int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socket
 }
 
 /* execute_cmd sub functions */
-bool is_internal_command_and_run(bool& is_exit, one_cmd& cmd, socketfd_t client_socket){
+bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket){
     if( strncmp(cmd.executable, "exit", 4) == 0 ){
         is_exit = true;
     }
@@ -399,7 +399,7 @@ bool is_internal_command_and_run(bool& is_exit, one_cmd& cmd, socketfd_t client_
     return true;
 }
 
-void processing_child_output_data(anony_pipe& child_output_pipe, socketfd_t client_socket){
+void processing_child_output_data(AnonyPipe& child_output_pipe, socketfd_t client_socket){
     child_output_pipe.close_write();
     while(1){
         char* read_buf[1024+1];
