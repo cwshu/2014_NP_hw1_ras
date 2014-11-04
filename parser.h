@@ -10,6 +10,7 @@ enum redirect_type{
 const char WHITESPACE[] = " \t\r\n\v\f";
 const char SHELL_SPECIAL_CHARS[] = "|><";
 const char FILE_REDIR_CHARS[] = "><";
+const char PIPE_CHARS[] = "|!";
 
 struct redirect{
     redirect_type kind;
@@ -39,6 +40,7 @@ struct one_cmd{
 struct one_line_cmd{
     one_cmd cmds[4096];
     redirect output_redirect[4096]; // must be pipe
+    redirect stderr_redirect[4096]; // must be pipe
     int cmd_count;
     redirect input_redirect;
     redirect last_output_redirect;
@@ -49,7 +51,8 @@ struct one_line_cmd{
     void next_cmd();
     void add_executable(const char* executable_name);
     void add_argv(const char* argument);
-    void add_pipe_redirect(int pipe_index_in_manager);
+    void add_stdout_pipe_redirect(int pipe_index_in_manager);
+    void add_stderr_pipe_redirect(int pipe_index_in_manager);
     void print();
 };
 

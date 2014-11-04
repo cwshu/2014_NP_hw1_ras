@@ -113,8 +113,12 @@ void one_line_cmd::add_argv(const char* argument){
     cmds[cmd_count].add_argv(argument);
 }
 
-void one_line_cmd::add_pipe_redirect(int pipe_index_in_manager){
+void one_line_cmd::add_stdout_pipe_redirect(int pipe_index_in_manager){
     output_redirect[cmd_count].set_pipe_redirect(pipe_index_in_manager);
+}
+
+void one_line_cmd::add_stderr_pipe_redirect(int pipe_index_in_manager){
+    stderr_redirect[cmd_count].set_pipe_redirect(pipe_index_in_manager);
 }
 
 void one_line_cmd::print(){
@@ -187,7 +191,7 @@ int one_line_cmd::parse_one_line_cmd(char* command_str){
                 break;
             }
 
-            char* pipe_str = strpbrk(argument, "|");
+            char* pipe_str = strpbrk(argument, PIPE_CHARS);
             if( !pipe_str ){
                 this->add_argv(argument);
                 continue;
@@ -210,12 +214,14 @@ int one_line_cmd::parse_one_line_cmd(char* command_str){
                     end_of_num[0] = '\0';
                     error_print_and_exit("pipe error: %s\n", pipe_str);
                 }
-                this->add_pipe_redirect(pipe_index_in_manager);
+                if( pipe_str[0] == '|') this->add_stdout_pipe_redirect(pipe_index_in_manager);
+                else if( pipe_str[0] == '!' ) this->add_stderr_pipe_redirect(pipe_index_in_manager);
                 cmd_after_pipe = end_of_num;
             }
             else{
                 /* only pipe without number */
-                this->add_pipe_redirect(1);
+                if( pipe_str[0] == '|') this->add_stdout_pipe_redirect(1);
+                else if( pipe_str[0] == '!' ) this->add_stderr_pipe_redirect(1);
                 cmd_after_pipe = pipe_str+1;
             }
             this->cmd_count += 1;
