@@ -1,7 +1,7 @@
 #include <cstdio>
 #include <cstdlib>
-#include "cstring_more.h"
 
+#include "cstring_more.h"
 #include "io_wrapper.h"
 #include "parser.h"
 
