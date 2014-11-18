@@ -31,6 +31,9 @@ clean:
 	@rm -f $(BUILD_EXES) $(CP_EXES) $(CLIENT_TEST_PROGRAM)
 	@rm -rf $(BIN_DIR)
 
+uninstall:
+	rm -rf $(RAS_DIR)
+
 $(BUILD_EXES): $(BIN_DIR)/%: $(COMMANDS_DIR)/%.cpp
 	$(CXX) -o $@ $(CXXFLAGS) $<
 
@@ -47,4 +50,4 @@ $(RAS_DIR) $(RAS_BIN_DIR) $(BIN_DIR):
 $(CLIENT_TEST_PROGRAM): client.c
 	$(CC) -o $@ $(CFLAGS) $<
 
-.PHONY: all install clean
+.PHONY: all install clean deinstall
