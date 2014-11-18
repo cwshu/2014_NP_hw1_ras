@@ -4,7 +4,7 @@ CXX = clang++
 CXXFLAGS = -std=c++11 -g
 
 EXE = ras
-OBJS = ras.o socket.o io_wrapper.o parser.o cstring_more.o pipe_manager.o
+OBJS = ras.o socket.o io_wrapper.o parser.o cstring_more.o pipe_manager.o server_arch.o
 
 all: ${EXE}
 

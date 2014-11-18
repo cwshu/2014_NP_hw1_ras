@@ -13,13 +13,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <signal.h>
 
 #include "socket.h"
 #include "io_wrapper.h"
 #include "parser.h"
 #include "pipe_manager.h"
 #include "cstring_more.h"
+#include "server_arch.h"
 
 using namespace std;
 
@@ -28,16 +28,10 @@ const int RAS_DEFAULT_PORT = 52000;
 const int MAX_ONELINE_CMD_SIZE = 65536;
 const int MAX_CMD_SIZE = 256;
 
-typedef void (*OneConnectionService)(socketfd_t connection_socket); 
-/* for example, telnet_service, http_service, or ras_service in our hw1 */
-
-void start_multiprocess_server(socketfd_t listen_socket, OneConnectionService service_function);
 void ras_service(socketfd_t client_socket);
 int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
 
-/* start_multiprocess_server sub functions */
-void sigchid_waitfor_child(int sig);
 /* ras_service sub functions */
 void ras_shell_init();
 void print_welcome_msg(socketfd_t client_socket);
@@ -68,41 +62,6 @@ int main(int argc, char** argv){
 
     start_multiprocess_server(ras_listen_socket, ras_service);
     return 0;
-}
-
-void start_multiprocess_server(socketfd_t listen_socket, OneConnectionService service_function){
-    /* wait at receive SIGCHLD, release child resource for multiprocess && concurrent server */
-    signal(SIGCHLD, sigchid_waitfor_child);
-
-    while(1){
-        socketfd_t connection_socket;
-        char client_ip[IP_MAX_LEN] = {'\0'};
-        int client_port;
-
-        connection_socket = socket_accept(listen_socket, client_ip, &client_port);
-        if( connection_socket < 0 ){
-            perror("accept error");
-            continue;
-        }
-
-        int child_pid = fork();
-        if( child_pid == 0 ){
-            int ret = close(listen_socket);
-            if( ret < 0 ) perror("close listen_socket error");
-
-            service_function(connection_socket);
-
-            ret = close(connection_socket);
-            if( ret < 0 ) perror("close connection_socket error");
-            exit(EXIT_SUCCESS);
-        }
-        else if( child_pid > 0 ){
-            close(connection_socket);
-        }
-        else {
-            perror("fork error");
-        }
-    }
 }
 
 void ras_service(socketfd_t client_socket){
@@ -278,13 +237,6 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
     processing_child_output_data(child_output_pipe, client_socket);
 
     return CMD_NORMAL;
-}
-
-/* main_service sub functions */
-void sigchid_waitfor_child(int sig){ 
-    int status;
-    pid_t child;
-    while( (child = waitpid(-1, &status, WNOHANG)) > 0 );
 }
 
 /* ras_service sub functions */
