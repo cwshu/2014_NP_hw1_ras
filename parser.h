@@ -1,6 +1,10 @@
 #ifndef __PARSER_H__
 #define __PARSER_H__
 
+#include <vector>
+#include <string>
+using namespace std;
+
 enum RedirectionType{
     REDIR_NONE,
     REDIR_FILE,
@@ -8,49 +12,59 @@ enum RedirectionType{
 };
 
 const char WHITESPACE[] = " \t\r\n\v\f";
-const char SHELL_SPECIAL_CHARS[] = "|><";
+const char REDIRECTION_CHARS[] = "|><";
 const char FILE_REDIR_CHARS[] = "><";
 
 struct Redirection{
     RedirectionType kind;
     union {
-        char filename[256];
+        string filename;
+        int person_id;
         int pipe_index_in_manager;
     } data;
 
     Redirection();
-    void set_file_redirect(const char* filename);
+    void set_file_redirect(string filename);
+    void set_file_redirect(int person_id);
     void set_pipe_redirect(int pipe_index_in_manager);
 };
 
 struct SingleCommand{
-    char executable[256];
-    char** argv;
-    int argv_count;
-    int size;
+    string executable;
+    vector<string> arguments;
+    int args_count;
+    Redirection std_input; // input redirection are both depend on here and PipeManager.
+    Redirection std_output;
+    Redirection std_error;
 
     SingleCommand();
-    void argv_array_alloc(int size = 256);
-    void add_executable(const char* executable_name);
-    void add_argv(const char* argument);
+    // void argv_array_alloc(int size = 256);
+    void add_executable(string executable_name);
+    void add_argv(string argument);
+    char** gen_argv();
     ~SingleCommand();
 };
 
 struct OneLineCommand{
-    SingleCommand cmds[4096];
-    Redirection output_redirect[4096]; // must be pipe
+    vector<SingleCommand> cmds;
     int cmd_count;
-    Redirection input_redirect;
-    Redirection last_output_redirect;
 
     OneLineCommand();
-    int parse_one_line_cmd(char* command);
-    void set_fileio_redirect(const char* str, int len);
+
+    SingleCommand& current_cmd();
     void next_cmd();
-    void add_executable(const char* executable_name);
-    void add_argv(const char* argument);
-    void add_pipe_redirect(int pipe_index_in_manager);
+    void add_executable(string executable_name);
+    void add_argv(string argument);
     void print();
+
+    int parse_one_line_cmd(string command_str);
+    int parse_single_command(string command_str);
+    int parse_redirection(string command_str);
+    /* return: NEXT_IS_CMD, NEXT_IS_REDIR_CHARS, NO_NEXT, CMD_ERROR */
 };
+const int CMD_ERROR = -1;
+const int NO_NEXT = 0;
+const int NEXT_IS_CMD = 1;
+const int NEXT_IS_REDIR_CHARS = 2;
 
 #endif

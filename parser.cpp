@@ -10,14 +10,18 @@ using namespace std;
 /* struct Redirection */
 Redirection::Redirection(){
     kind = REDIR_NONE; 
-    memset(data.filename, 0, 256*sizeof(char));
+    filename = string();
     data.pipe_index_in_manager = -1;
 }
 
-void Redirection::set_file_redirect(const char* filename){
+void Redirection::set_file_redirect(string filename){
     kind = REDIR_FILE;
-    int len = strlen(filename);
-    strncpy_add_null(data.filename, filename, len);
+    data.filename = filename;
+}
+
+void Redirection::set_file_redirect(int person_id){
+    kind = REDIR_FILE;
+    data.person_id = person_id;
 }
 
 void Redirection::set_pipe_redirect(int pipe_index_in_manager){
@@ -27,35 +31,51 @@ void Redirection::set_pipe_redirect(int pipe_index_in_manager){
 
 /* struct SingleCommand */
 SingleCommand::SingleCommand(){
-    memset(executable, 0, 256*sizeof(char));
-    argv = NULL;
-    argv_count = -1;
-}
+    executable = string();
+    arguments = vector();
+    args_count = 0;
+}   
 
+/*
 void SingleCommand::argv_array_alloc(int size){
     argv = new char*[size]; 
-    argv_count = 0;
+    args_count = 0;
     this->size = size;
-}
+}*/
 
-void SingleCommand::add_executable(const char* executable_name){
-    int len = strlen(executable_name);
-    strncpy_add_null(executable, executable_name, len);
-    argv_array_alloc();
+void SingleCommand::add_executable(string executable_name){
+    executable = executable_name;
     add_argv(executable_name);
 }
 
-void SingleCommand::add_argv(const char* argument){
-    int len = strlen(argument);
-    argv[argv_count] = new char[len+1];
-    strncpy_add_null(argv[argv_count], argument, len);
-    argv_count += 1;
-    argv[argv_count] = NULL; /* NULL-terminate for exec */
+void SingleCommand::add_argv(string argument){
+    argv.push_back(argument);
+    args_count += 1;
+}
+
+char** SingleCommand::gen_argv(){
+    char** argv;
+    argv = new char* [args_count+1];
+    for( int i=0; i<args_count; i++ ){
+        argv[i] = new char [argument[i].length()+1];
+        strncpy(argv[i], argument[i].c_str(), argument.length()+1);
+    }
+    argv[args_count] = NULL;
+    return argv;
+}
+
+void SingleCommand::free_argv(char** argv){
+    int index = 0;
+    while( argv[index] != NULL ){
+        delete [] argv[index];
+        index += 1;
+    }
+    delete [] argv;
 }
 
 SingleCommand::~SingleCommand(){
     if( argv ){
-        for(int i=0; i<argv_count; i++){
+        for( int i=0; i<args_count; i++ ){
             delete [] argv[i];
         }
         delete [] argv;
@@ -64,69 +84,36 @@ SingleCommand::~SingleCommand(){
 
 /* struct OneLineCommand */
 OneLineCommand::OneLineCommand(){
+    cmds = vector();
     cmd_count = 0;
-    input_redirect = Redirection();
-    last_output_redirect = Redirection();
 }
 
-void OneLineCommand::set_fileio_redirect(const char* str, int len){
-    char op = str[0];
-    str += 1;
-    const char* filename = str + strspn(str, WHITESPACE);
-    const char* filename_end = filename + strcspn(filename, WHITESPACE);
-
-    if( filename >= str+len-1 )
-        error_print_and_exit("fileio redirect error:%c%s\n", op, str);
-    if( filename_end == NULL || filename_end > str+len-1 )
-        filename_end = str+len-1;
-
-    int filename_len = filename_end - filename;
-    if( filename_len == 0 )
-        error_print_and_exit("fileio redirect error:%c%s\n", op, str);
-
-    char filename_cp[256] = {0};
-    strncpy_add_null(filename_cp, filename, filename_len);
-    if( op == '<' ){
-        if(input_redirect.kind != REDIR_NONE)
-            error_print_and_exit("more than one input redirection error\n");
-        input_redirect.set_file_redirect(filename_cp);
-    }
-    else if( op == '>' ){
-        if( last_output_redirect.kind != REDIR_NONE )
-            error_print_and_exit("more than one output redirection error\n");
-        last_output_redirect.set_file_redirect(filename_cp);
-    }
-    else{
-        error_print_and_exit("io_redirection mistake op %c\n", op);
-    }
+SingleCommand& OneLineCommand::current_cmd(){
+    return cmds[cmd_count];
 }
 
 void OneLineCommand::next_cmd(){
     cmd_count++;
 }
 
-void OneLineCommand::add_executable(const char* executable_name){
+void OneLineCommand::add_executable(string executable_name){
     cmds[cmd_count].add_executable(executable_name);
 }
 
-void OneLineCommand::add_argv(const char* argument){
+void OneLineCommand::add_argv(string argument){
     cmds[cmd_count].add_argv(argument);
-}
-
-void OneLineCommand::add_pipe_redirect(int pipe_index_in_manager){
-    output_redirect[cmd_count].set_pipe_redirect(pipe_index_in_manager);
 }
 
 void OneLineCommand::print(){
     printf("input_redirect: ");
-    if(input_redirect.kind == REDIR_NONE){
+    if( input_redirect.kind == REDIR_NONE ){
         printf("None\n");
     }
     else{
         printf("%s\n", input_redirect.data.filename);
     }
     printf("last_output_redirect: ");
-    if(last_output_redirect.kind == REDIR_NONE){
+    if( last_output_redirect.kind == REDIR_NONE ){
         printf("None\n");
     }
     else{
@@ -134,101 +121,170 @@ void OneLineCommand::print(){
     }
 
     printf("command count: %d\n", cmd_count);
-    for(int i=0; i<cmd_count; i++){
+    for( int i=0; i<cmd_count; i++ ){
         printf("exe: %s\n", cmds[i].executable);
-        for(int j=0; j<cmds[i].argv_count; j++){
+        for( int j=0; j<cmds[i].args_count; j++ ){
             printf("args: %s\n", cmds[i].argv[j]);
         }
         printf("pipe_index_in_manager: %d\n", output_redirect[i].data.pipe_index_in_manager);
     }
 }
 
-int OneLineCommand::parse_one_line_cmd(char* command_str){
-    char* current_cmd = command_str;
+int OneLineCommand::parse_single_command(string command_str){
+    /* parsing single command, stop at pipe or file redirection or end-of-string(line).
+     * single command: executable and arguments.
+     *
+     * return value: number of arguments, 0 for error, 1 for only executable.
+     */
 
-    current_cmd += strspn(current_cmd, WHITESPACE); /* strip left whitespaces */
+    /* strip left whitespaces */
+    std::size_t found = command_str.find_first_not_of(WHITESPACE) 
+    if( found == string::npos )
+        return 0; // No Command
+    command_str = command_str.substr(found, string::npos);
 
-    /* parse file io redirection at end of line in command */
-    char* first_io_idx = strpbrk(current_cmd, FILE_REDIR_CHARS);
-    char* io_idx = first_io_idx;
-    while( io_idx ){
-        char* next_io_idx = strpbrk(io_idx+1, FILE_REDIR_CHARS);
-        int len;
-        if( next_io_idx )
-            len = next_io_idx - io_idx;
-        else
-            len = strlen(io_idx);
+    /* parse executable name */
+    found = command_str.find_first_of(WHITESPACE);
+    if( found == string::npos )
+        return 0; // No Command
+    string exe_name = command_str.substr(0, found);
+    command_str = command_str.substr(found, string::npos);
+    this->add_executable(exe_name);
+    
+    /* parse arguments */
+    while( 1 ){
+        std::size_t arg_start = command_str.find_first_not_of(WHITESPACE)
+        std::size_t arg_end = command_str.find_first_of(WHITESPACE, arg_start);
+        if( arg_start == string::npos ){
+            /* stop at end of line */
+            command_str = "";
+            return cmd[cmd_count].args_count;
+        }
 
-        set_fileio_redirect(io_idx, len);
-        io_idx = next_io_idx;
+        string argument = command_str.substr(arg_start, arg_end - arg_start);
+        std::size_t redir_char_found = argument.find_first_of(REDIRECTION_CHARS);
+
+        if( found != string::npos ){
+            /* stop at REDIRECTION_CHARS like pipe */
+            if( redir_char_found == 0 ){
+                /* first char is REDIRECTION_CHARS */
+                command_str = command_str.substr(arg_start, string::npos);
+                return this->current_cmd().args_count;
+            }
+            argument = argument.substr(0, found);
+            this->add_argv(argument);
+            command_str = command_str.substr(arg_start + redir_char_found, string::npos);
+            return this->current_cmd().args_count;
+        }
+        else{
+            /* found one argument */
+            this->add_argv(argument);
+            command_str = command_str.substr(arg_end, string::npos);
+            continue;
+        }
     }
+}
 
-    if( first_io_idx )
-        first_io_idx[0] = '\0';
+int OneLineCommand::parse_redirection(string command_str){
+    /* parsing REDIRECTION_CHARS 
+     * format: FORMAT1 , FORMAT2 ... , (RETURN_STATUS)
+     *       : <number , <filename   , (NEXT_IS_REDIR_CHARS)
+     *       : >number , >filename   , (NEXT_IS_REDIR_CHARS) 
+     *       : |number command       , (NEXT_IS_CMD) 
+     *                 ^ command_str will be here after this function.
+     *
+     * return: NEXT_IS_CMD, NEXT_IS_REDIR_CHARS, NO_NEXT, CMD_ERROR
+     */
 
-    /* parsing command and arguments and pipe */
-    char* split_str = current_cmd;
-    while(1){
-        int end_of_cmd = false;
+    /* strip left whitespaces */
+    std::size_t found = command_str.find_first_not_of(WHITESPACE) 
+    if( found == string::npos )
+        return NO_NEXT; // No Command
+    command_str = command_str.substr(found, string::npos);
 
-        if( this->cmds[this->cmd_count].argv_count <= 0 ){
-            char* exe_name = strtok(split_str, WHITESPACE);
-            split_str = NULL;
-            if( !exe_name )
-                break;
-            this->add_executable(exe_name);
-        }
+    char redir_char = command_str[0];
+    if( !char_belong_to(redir_char, REDIRECTION_CHARS) ){
+        return CMD_ERROR;
+    }
+    
+    /* [|><][0-9]+ => redir_char + redir_num 
+     * [|><]       => redir_char (redir_num = -1)
+     */
+    int redir_num = -1;
+    if( command_str[1] >= '0' && command_str[1] <= '9' ){
+        std::size_t index_after_num = 0;
+        redir_num = stoi(command_str, &index_after_num);
+        command_str = command_str.substr(index_after_num, string::npos);
+    }
+    else
+        command_str = command_str.substr(1, string::npos);
 
-        while(1){
-            char* argument = strtok(NULL, WHITESPACE);
-            if( !argument ){
-                this->cmd_count += 1;
-                end_of_cmd = true;
-                break;
+    /* store (redir_char, redir_num) */
+    if( redir_char == '|' ){
+        if( redir_num == -1 ) 
+            redir_num = 1;
+
+        if( redir_num == 0 )
+            error_print_and_exit("pipe error: %s\n", command_str.substr(0, 2).c_str());
+
+        this->current_cmd().std_output.set_pipe_redirect(redir_num);
+        this->cmd_count += 1;
+        return NEXT_IS_CMD;
+    }
+    else if( char_belong_to(redir_char, FILE_REDIR_CHARS) ){
+        if( redir_num != -1 ){
+            /* redirect to/from number(person in chat room) */
+            if( redir_char == '<' ){
+                this->current_cmd().std_input.set_file_redirect(redir_num);
             }
+            else if( redir_char == '>' ){
+                this->current_cmd().std_output.set_file_redirect(redir_num);
+            }
+        }
+        else{
+            /* redirect to/from file */
+            std::size_t start = command_str.find_first_not_of(WHITESPACE)
+            std::size_t end = command_str.find_first_of(WHITESPACE, start);
+            if( start == string::npos ){
+                /* end of line */
+                command_str = "";
+                return CMD_ERROR; // no filename
+            }
+            string filename = command_str.substr(start, end - start);
 
-            char* pipe_str = strpbrk(argument, "|");
-            if( !pipe_str ){
-                this->add_argv(argument);
+            if( redir_char == '<' ){
+                this->current_cmd().std_input.set_file_redirect(filename);
+            }
+            else if( redir_char == '>' ){
+                this->current_cmd().std_output.set_file_redirect(filename);
+            }
+            command_str = command_str.substr(end, string::npos);
+        } 
+        return NEXT_IS_REDIR_CHARS;
+    }
+}
+
+int OneLineCommand::parse_one_line_cmd(string command_str){
+    string backup_command = command_str;
+    while( 1 ){
+        std::size_t found = command_str.find_first_not_of(WHITESPACE) /* strip left whitespaces */
+        if( found == string::npos )
+            return 0;
+        current_cmd = command_str.substr(pos = found);
+
+        parse_single_command(current_cmd);
+        while( 1 ){
+            int status = parse_redirection(current_cmd);
+
+            if( status == NEXT_IS_CMD )
+                break;
+            else if( status == NEXT_IS_REDIR_CHARS )
                 continue;
-            }
-
-            /* processing pipe and arguments connected with pipe: before pipe and after pipe.
-             * ex. ls -a|grep c , (before, after) = (-a, grep) */
-            if(pipe_str != argument){
-                /* has before pipe argument */
-                char arg_bef_pipe[256];
-                strncpy_add_null(arg_bef_pipe, argument, pipe_str - argument);
-                this->add_argv(arg_bef_pipe);
-            }
-            char* cmd_after_pipe = NULL;
-            if( pipe_str[1] >= '0' && pipe_str[1] <= '9' ){
-                /* |[0-9] => pipe + number */
-                char *end_of_num = NULL;
-                int pipe_index_in_manager = strtol(pipe_str+1, &end_of_num, 10);
-                if(pipe_index_in_manager == 0){
-                    end_of_num[0] = '\0';
-                    error_print_and_exit("pipe error: %s\n", pipe_str);
-                }
-                this->add_pipe_redirect(pipe_index_in_manager);
-                cmd_after_pipe = end_of_num;
-            }
-            else{
-                /* only pipe without number */
-                this->add_pipe_redirect(1);
-                cmd_after_pipe = pipe_str+1;
-            }
-            this->cmd_count += 1;
-
-            cmd_after_pipe = cmd_after_pipe + strspn(cmd_after_pipe, WHITESPACE);
-            if( cmd_after_pipe[0] != '\0' ){
-                this->add_executable(cmd_after_pipe);
-            }
-            break;
+            else if( status == NO_NEXT )
+                return 0;
+            else if( status == CMD_ERROR )
+                error_print_and_exit("parsing command error %s\n", backup_command.c_str());
         }
-
-        if( end_of_cmd )
-            break;
     }
     return 0;
 }

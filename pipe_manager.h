@@ -2,6 +2,7 @@
 #define __PIPE_MANAGER_H__
 
 #include <vector>
+#include <string>
 using namespace std;
 
 /* struct AnonyPipe */
