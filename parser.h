@@ -46,7 +46,6 @@ struct SingleCommand{
     void add_argv(string argument);
     char** gen_argv();
     void free_argv(char** argv);
-    ~SingleCommand();
 };
 
 struct OneLineCommand{
@@ -56,7 +55,7 @@ struct OneLineCommand{
     OneLineCommand();
 
     SingleCommand& current_cmd();
-    void next_cmd();
+    void create_cmd();
     void add_executable(string executable_name);
     void add_argv(string argument);
     void print() const;

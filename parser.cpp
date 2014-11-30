@@ -93,11 +93,12 @@ OneLineCommand::OneLineCommand(){
 }
 
 SingleCommand& OneLineCommand::current_cmd(){
-    return cmds[cmd_count];
+    return cmds[cmd_count-1];
 }
 
-void OneLineCommand::next_cmd(){
+void OneLineCommand::create_cmd(){
     cmd_count++;
+    cmds.push_back(SingleCommand());
 }
 
 void OneLineCommand::add_executable(string executable_name){
@@ -111,12 +112,15 @@ void OneLineCommand::add_argv(string argument){
 void OneLineCommand::print() const{
     printf("command count: %d\n", cmd_count);
     for( const auto& cmd : cmds ){
-        printf("exe: %s", cmd.executable.c_str());
+        printf("exe: %s\n", cmd.executable.c_str());
         for( const auto& argument : cmd.arguments ){
             printf("args: %s\n", argument.c_str());
         }
+        printf("stdin redirection: ");
         cmd.std_input.print();
+        printf("stdout redirection: ");
         cmd.std_output.print();
+        printf("stderr redirection: ");
         cmd.std_error.print();
     }
 }
@@ -140,7 +144,7 @@ string OneLineCommand::fetch_word(string& command_str){
     }
     else{
         word = command_str.substr(start, end - start);
-        command_str.erase(end, string::npos);
+        command_str.erase(0, end + 1);
     }
 
     return word;
@@ -158,12 +162,14 @@ int OneLineCommand::parse_single_command(string& command_str){
     string exe_name = fetch_word(command_str);
     if( exe_name.empty() )
         return 0;
+    this->create_cmd(); 
     this->add_executable(exe_name);
 
     /* parse arguments */
     while( 1 ){
         string argument = fetch_word(command_str);
         if( argument.empty() )
+            /* stop at end-of-string(line) */
             return this->current_cmd().args_count;
 
         std::size_t redir_char_found = argument.find_first_of(REDIRECTION_CHARS);
@@ -200,20 +206,19 @@ int OneLineCommand::parse_redirection(string& command_str){
 
     char redir_char = command_str[0];
     if( !char_belong_to(redir_char, REDIRECTION_CHARS) ){
-        return CMD_ERROR;
+        return NO_NEXT;
     }
     
     /* [|><][0-9]+ => redir_char + redir_num 
      * [|><]       => redir_char (redir_num = -1)
      */
     int redir_num = -1;
-    if( command_str[1] >= '0' && command_str[1] <= '9' ){
+    command_str = command_str.substr(1, string::npos);
+    if( command_str[0] >= '0' && command_str[0] <= '9' ){
         std::size_t index_after_num = 0;
         redir_num = stoi(command_str, &index_after_num);
         command_str = command_str.substr(index_after_num, string::npos);
     }
-    else
-        command_str = command_str.substr(1, string::npos);
 
     /* store (redir_char, redir_num) */
     if( redir_char == '|' ){
@@ -224,7 +229,6 @@ int OneLineCommand::parse_redirection(string& command_str){
             error_print_and_exit("pipe error: %s\n", command_str.substr(0, 2).c_str());
 
         this->current_cmd().std_output.set_pipe_redirect(redir_num);
-        this->cmd_count += 1;
         return NEXT_IS_CMD;
     }
     else if( char_belong_to(redir_char, FILE_REDIR_CHARS) ){
@@ -266,13 +270,12 @@ int OneLineCommand::parse_one_line_cmd(string& command_str){
      */
     string backup_command = command_str;
     while( 1 ){
-        /* strip left whitespaces */
-        std::size_t found = command_str.find_first_not_of(WHITESPACE);
-        if( found == string::npos )
-            return 0;
-        command_str = command_str.substr(found, string::npos);
         /* parse command executable and arguments */
-        parse_single_command(command_str);
+        int argc = parse_single_command(command_str);
+        if( argc == 0 ){
+            return 0;
+        }
+
         while( 1 ){
             /* parse IO redirection, and decide if there is more commands in this line. */
             int status = parse_redirection(command_str);
