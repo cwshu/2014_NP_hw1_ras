@@ -9,6 +9,7 @@ enum RedirectionType{
     REDIR_NONE,
     REDIR_FILE,
     REDIR_PIPE,
+    REDIR_TO_PERSON,
 };
 
 const char WHITESPACE[] = " \t\r\n\v\f";
@@ -17,7 +18,7 @@ const char FILE_REDIR_CHARS[] = "><";
 
 struct Redirection{
     RedirectionType kind;
-    union {
+    struct {
         string filename;
         int person_id;
         int pipe_index_in_manager;
@@ -25,8 +26,10 @@ struct Redirection{
 
     Redirection();
     void set_file_redirect(string filename);
-    void set_file_redirect(int person_id);
+    void set_to_person_redirect(int person_id);
     void set_pipe_redirect(int pipe_index_in_manager);
+
+    void print() const;
 };
 
 struct SingleCommand{
@@ -42,6 +45,7 @@ struct SingleCommand{
     void add_executable(string executable_name);
     void add_argv(string argument);
     char** gen_argv();
+    void free_argv(char** argv);
     ~SingleCommand();
 };
 
@@ -55,12 +59,14 @@ struct OneLineCommand{
     void next_cmd();
     void add_executable(string executable_name);
     void add_argv(string argument);
-    void print();
+    void print() const;
 
-    int parse_one_line_cmd(string command_str);
-    int parse_single_command(string command_str);
-    int parse_redirection(string command_str);
+    int parse_one_line_cmd(string& command_str);
+    int parse_single_command(string& command_str);
+    int parse_redirection(string& command_str);
     /* return: NEXT_IS_CMD, NEXT_IS_REDIR_CHARS, NO_NEXT, CMD_ERROR */
+
+    string fetch_word(string& command_str);
 };
 const int CMD_ERROR = -1;
 const int NO_NEXT = 0;
