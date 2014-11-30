@@ -36,7 +36,11 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
 void ras_shell_init();
 void print_welcome_msg(socketfd_t client_socket);
 int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socketfd_t client_socket);
+
 /* execute_cmd sub functions */
+void pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj);
+void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj,
+  AnonyPipe& child_output_pipe);
 bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket);
 void processing_child_output_data(AnonyPipe& child_output_pipe, socketfd_t client_socket);
 
@@ -104,8 +108,8 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
         return CMD_NORMAL;
-    char* command = new char [cmd_len+1];
-    strncpy_add_null(command, origin_command, strlen(origin_command));
+
+    string command(origin_command);
 
     /* parsing */
     OneLineCommand parsed_cmds;
@@ -122,89 +126,42 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
     AnonyPipe child_output_pipe;
     child_output_pipe.create_pipe();
     int legal_cmd = 0;
-    for(int i=0; i<parsed_cmds.cmd_count; i++){
-        /* fd creation (input file) */
-        bool is_file_input = false;
-        int file_input_fd = -1;
-        if( i == 0 ){
-            /* 1st command of line, check input file redirection */
-            if( parsed_cmds.input_redirect.kind == REDIR_FILE ){
-                is_file_input = true;
-                file_input_fd = open(parsed_cmds.input_redirect.data.filename, O_RDONLY);
-                if(file_input_fd == -1)
-                    perror_and_exit("open error");
-            }
 
-            if( is_file_input && cmd_pipe_manager.cmd_has_pipe(0) ){
-                error_print_and_exit("ambiguous input redirection");
-            }
+    for( auto& current_cmd : parsed_cmds.cmds ){
+        /* 
+         * exec(current_cmd.executable, current_cmd.gen_argv())
+         * stdin: current_cmd.std_input.(kind, data), cmd_pipe_manager.cmd_has_pipe(0)
+         * stdout: current_cmd.std_output.(kind, data), 
+         * stderr: current_cmd.std_error.(kind, data), 
+         * (any redirect to pipe) cmd_pipe_manager
+         */
+
+        /* pre-processing redirection in parent process */
+        if( current_cmd.std_input.kind != REDIR_NONE && cmd_pipe_manager.cmd_has_pipe(0) ){
+            error_print_and_exit("ambiguous input redirection");
         }
-
-        /* fd creation (output to pipe or output to file) */
-        int is_file_output = false;
-        int file_output_fd = -1;
-        if( i == parsed_cmds.cmd_count-1 ){
-            /* last command of line, check output file redirection */
-            if( parsed_cmds.last_output_redirect.kind == REDIR_FILE ){
-                is_file_output = true;
-                file_output_fd = open(parsed_cmds.last_output_redirect.data.filename, O_WRONLY|O_CREAT|O_TRUNC, 0644);
-                if(file_output_fd == -1)
-                    perror_and_exit("open error");
-            }
-
-            if( is_file_output && cmd_pipe_manager.cmd_has_pipe(parsed_cmds.cmd_count-1) ){
-                error_print_and_exit("ambiguous output redirection");
-            }
+        if( cmd_pipe_manager.cmd_has_pipe(0) ){
+            current_cmd.std_input.set_pipe_redirect(0);
         }
-
-        if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
-            int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_index_in_manager;
-            if( !cmd_pipe_manager.cmd_has_pipe(pipe_index_in_manager) ){
-                cmd_pipe_manager.get_pipe(pipe_index_in_manager).create_pipe();
-            }
-        }
-
+        pre_fd_redirection(cmd_pipe_manager, STDIN_FILENO, current_cmd.std_input);
+        pre_fd_redirection(cmd_pipe_manager, STDOUT_FILENO, current_cmd.std_output);
+        pre_fd_redirection(cmd_pipe_manager, STDERR_FILENO, current_cmd.std_error);
+        
         int pid = fork();
         if( pid == 0 ){
             /* stdin redirection */
-            if( i == 0 && is_file_input ){
-                dup2(file_input_fd, STDIN_FILENO);
-            }
-            else if( cmd_pipe_manager.cmd_has_pipe(0) ){
-                AnonyPipe& input_pipe = cmd_pipe_manager.get_pipe(0);
-                int input_fd = input_pipe.read_fd();
-                dup2(input_fd, STDIN_FILENO);
-                input_pipe.close_pipe();
-            }
-            /*
-            else{
-                dup2(client_socket, STDIN_FILENO);
-            }
-            */
-
+            fd_redirection(cmd_pipe_manager, STDIN_FILENO, current_cmd.std_input, child_output_pipe);
             /* stdout redirection */
-            if( i == parsed_cmds.cmd_count-1 && is_file_output ){
-                dup2(file_output_fd, STDOUT_FILENO);
-            }
-            else if( parsed_cmds.output_redirect[i].kind == REDIR_PIPE ){
-                int pipe_index_in_manager = parsed_cmds.output_redirect[i].data.pipe_index_in_manager;
-                AnonyPipe& output_pipe = cmd_pipe_manager.get_pipe(pipe_index_in_manager);
-                int output_fd = output_pipe.write_fd();
-                dup2(output_fd, STDOUT_FILENO);
-            }
-            else{
-                int output_fd = child_output_pipe.write_fd();
-                dup2(output_fd, STDOUT_FILENO);
-            }
-            
+            fd_redirection(cmd_pipe_manager, STDOUT_FILENO, current_cmd.std_output, child_output_pipe);
             /* stderr redirection */
-            dup2(child_output_pipe.write_fd(), STDERR_FILENO);
-            execvp(parsed_cmds.cmds[i].executable, parsed_cmds.cmds[i].argv);
+            fd_redirection(cmd_pipe_manager, STDERR_FILENO, current_cmd.std_error, child_output_pipe);
 
+            char** argv = current_cmd.gen_argv();
+            execvp(current_cmd.executable.c_str(), argv);
             /* exec error: print "Unknown command [command_name]" */
             char unknown_cmd[MAX_CMD_SIZE+128] = "";
-            int unknown_cmd_size = snprintf(unknown_cmd, MAX_CMD_SIZE+128, "Unknown command: [%s].\n", parsed_cmds.cmds[i].executable);
-            write(child_output_pipe.write_fd(), unknown_cmd, unknown_cmd_size);
+            int u_cmd_size = snprintf(unknown_cmd, MAX_CMD_SIZE+128, "Unknown command: [%s].\n", current_cmd.executable.c_str());
+            write(child_output_pipe.write_fd(), unknown_cmd, u_cmd_size);
             exit(EXIT_FAILURE);
         }
         else if(pid > 0){
@@ -333,17 +290,69 @@ int read_cmd_from_socket_and_check_overflow(char* cmd_buf, int& cmd_size, socket
 }
 
 /* execute_cmd sub functions */
+void pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj){
+    /* create pipe */
+    if( redirect_obj.kind == REDIR_PIPE ){
+        if( origin_fd == STDOUT_FILENO || origin_fd == STDERR_FILENO ){
+            int pipe_index = redirect_obj.data.pipe_index_in_manager;
+            AnonyPipe& redirect_pipe = cmd_pipe_manager.get_pipe(pipe_index);
+            if( !redirect_pipe.enable )
+                redirect_pipe.create_pipe();
+        }
+    }
+}
+
+void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj,
+  AnonyPipe& child_output_pipe){
+    /* do the STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO redirection */
+    if( redirect_obj.kind == REDIR_NONE ){
+        if( origin_fd == STDOUT_FILENO || origin_fd == STDERR_FILENO ){
+            int output_fd = child_output_pipe.write_fd();
+            dup2(output_fd, origin_fd);
+        }
+    }
+    else if( redirect_obj.kind == REDIR_FILE ){
+        int file_fd;
+        if( origin_fd == STDIN_FILENO )
+            file_fd = open(redirect_obj.data.filename.c_str(), O_RDONLY);
+        else
+            file_fd = open(redirect_obj.data.filename.c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0644);
+
+        if(file_fd == -1)
+            perror_and_exit("open error");
+
+        dup2(file_fd, origin_fd);
+    }
+    else if( redirect_obj.kind == REDIR_PIPE ){
+        int pipe_index = redirect_obj.data.pipe_index_in_manager;
+        AnonyPipe& redirect_pipe = cmd_pipe_manager.get_pipe(pipe_index);
+
+        if( origin_fd == STDIN_FILENO ){
+            int redirect_fd = redirect_pipe.read_fd();
+            dup2(redirect_fd, origin_fd);
+            redirect_pipe.close_pipe();
+        }
+        else if( origin_fd == STDOUT_FILENO || origin_fd == STDERR_FILENO ){
+            int redirect_fd = redirect_pipe.write_fd();
+            dup2(redirect_fd, origin_fd);
+        }
+    }
+}
+
 bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket){
-    if( strncmp(cmd.executable, "exit", 4) == 0 ){
+    if( cmd.executable == "exit" ){
         is_exit = true;
     }
-    else if( strncmp(cmd.executable, "printenv", 8) == 0 ){
+    else if( cmd.executable == "printenv" ){
         char tmp[1024+1];
-        int size = snprintf(tmp, 1024, "%s=%s\n", cmd.argv[1], getenv(cmd.argv[1]));
+        const char* argv1 = cmd.arguments[1].c_str();
+        int size = snprintf(tmp, 1024, "%s=%s\n", argv1, getenv(argv1));
         write_all(client_socket, tmp, size);
     }
-    else if( strncmp(cmd.executable, "setenv", 6) == 0 ){
-        setenv(cmd.argv[1], cmd.argv[2], 1);
+    else if( cmd.executable == "setenv" ){
+        const char* argv1 = cmd.arguments[1].c_str();
+        const char* argv2 = cmd.arguments[2].c_str();
+        setenv(argv1, argv2, 1);
     }
     else{
         return false;
