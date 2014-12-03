@@ -6,6 +6,14 @@ CXXFLAGS = -std=c++11 -g
 EXE = ras
 OBJS = ras.o socket.o io_wrapper.o parser.o cstring_more.o pipe_manager.o server_arch.o
 
+MAKE = make
+
+# platform issue
+UNAME = $(shell uname)
+ifeq ($(UNAME), FreeBSD)
+    MAKE = gmake
+endif
+
 all: ${EXE}
 
 clean: 
@@ -19,6 +27,6 @@ $(OBJS): %.o: %.cpp
 
 # build TA testing environment
 TA_test:
-	make all install -C $@
+	$(MAKE) all install -C $@
 
 .PHONY: all clean TA_test
