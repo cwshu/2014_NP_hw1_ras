@@ -192,6 +192,7 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
         }
     }
     processing_child_output_data(child_output_pipe, client_socket);
+    child_output_pipe.close_pipe();
 
     return CMD_NORMAL;
 }
