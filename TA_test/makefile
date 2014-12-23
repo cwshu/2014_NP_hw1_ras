@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS =
-CXX = g++
+CXX = clang++
 CXXFLAGS =
 
 RAS_DIR = ~/ras
@@ -50,4 +50,4 @@ $(RAS_DIR) $(RAS_BIN_DIR) $(BIN_DIR):
 $(CLIENT_TEST_PROGRAM): client.c
 	$(CC) -o $@ $(CFLAGS) $<
 
-.PHONY: all install clean deinstall
+.PHONY: all install clean uninstall
