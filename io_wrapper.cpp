@@ -12,7 +12,7 @@ void perror_and_exit(const char* str){
     exit(EXIT_FAILURE);
 }
 
-void error_print(const char* format ... ){
+void error_print(const char* format, ... ){
     /* print format string to stderr */
     va_list argptr;
     va_start(argptr, format);
@@ -20,7 +20,7 @@ void error_print(const char* format ... ){
     va_end(argptr);
 }
 
-void error_print_and_exit(const char* format ... ){
+void error_print_and_exit(const char* format, ... ){
     /* print format string to stderr */
     va_list argptr;
     va_start(argptr, format);

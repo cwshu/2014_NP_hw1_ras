@@ -27,6 +27,6 @@ $(OBJS): %.o: %.cpp
 
 # build TA testing environment
 TA_test:
-	$(MAKE) all install -C $@
+	$(MAKE) clean all install -C $@
 
 .PHONY: all clean TA_test
