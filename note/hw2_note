@@ -1,0 +1,34 @@
+1. initial state
+    - 環境變數清空
+2. tell, yell, name, who isn't used with pipe.
+3. tell [client_id] [msg]
+    - to 1 client
+    - error
+        - client_id not exist
+4. yell [msg]
+    - to all client
+5. name [name]
+    - to all client
+    - error
+        - name is exist
+6. who
+7/8. boardcast when enter and exit chat room.
+    - to all client
+    - exit 時, 別人 pipe 過來的資料會消失.
+9. pipe to other client
+11.  recieve from other client
+
+- info
+  - client addr
+  - client id (number)
+  - client name
+    - no same name, atomic modify
+
+- IPC api between server and controller
+  - new user
+  - user leave
+  
+  - add msg [id|all] [msg]
+  - add data [id] [data]
+
+
