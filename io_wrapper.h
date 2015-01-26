@@ -10,6 +10,8 @@ void error_print(const char* format, ... );
 void error_print_and_exit(const char* format, ... );
 
 int write_all(int fd, const void* buf, size_t count);
+int write_all_char_array(int fd, const char* str);
+int write_all_str(int fd, const std::string& str);
 
 namespace str{
     std::string read(int fd, int count, bool is_nonblocking);

@@ -44,13 +44,25 @@ int write_all(int fd, const void* buf, size_t count){
     const void* cur_buf = buf;
     while(writen_size < count){
         int size = write(fd, buf, count - writen_size);
-        if(size < 0)
+        if( size < 0 )
             return size;
+        if( size == 0 )
+            return writen_size;
 
         writen_size += size;
         cur_buf = (const char*)cur_buf + size;
     }
     return writen_size;
+}
+
+int write_all_char_array(int fd, const char* str){
+    /* str must be zero terminate string */
+    size_t count = strlen(str);
+    return write_all(fd, str, count);
+}
+
+int write_all_str(int fd, const std::string& str){
+    return write_all(fd, str.c_str(), str.length());
 }
 
 namespace str{
