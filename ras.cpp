@@ -28,7 +28,7 @@ const int RAS_DEFAULT_PORT = 52000;
 const int MAX_ONELINE_CMD_SIZE = 65536;
 const int MAX_CMD_SIZE = 256;
 
-void ras_service(socketfd_t client_socket);
+void ras_service(socketfd_t client_socket, SocketAddr& client_addr);
 int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
 
@@ -45,30 +45,17 @@ bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t c
 void processing_child_output_data(AnonyPipe& child_output_pipe, socketfd_t client_socket);
 
 int main(int argc, char** argv){
-    int ras_port = RAS_DEFAULT_PORT;
+    SocketAddr ras_addr(RAS_IP, RAS_DEFAULT_PORT);
     if(argc == 2){
-        ras_port = strtol(argv[1], NULL, 0);
+        ras_addr.port_hbytes = strtol(argv[1], NULL, 0);
     }
     
-    /* listening ras first */
-    socketfd_t ras_listen_socket;
-    ras_listen_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if( ras_listen_socket < 0 )
-        perror_and_exit("create socket error");
-
-    // int on = 1;
-    // setsockopt(ras_listen_socket, SOL_SOCKET, SO_REUSEADDR, (const char *)&on, sizeof(on));
-
-    if( socket_bind(ras_listen_socket, RAS_IP, ras_port) < 0 )
-        perror_and_exit("bind error");
-    if( listen(ras_listen_socket, 1) < 0)
-        perror_and_exit("listen error");
-
+    socketfd_t ras_listen_socket = bind_and_listen_tcp_socket(ras_addr);
     start_multiprocess_server(ras_listen_socket, ras_service);
     return 0;
 }
 
-void ras_service(socketfd_t client_socket){
+void ras_service(socketfd_t client_socket, SocketAddr& client_addr){
     /* client is connect to server, this function do ras service to client */
     char cmd_buf[MAX_ONELINE_CMD_SIZE+1] = {0};
     int cmd_size = 0;
