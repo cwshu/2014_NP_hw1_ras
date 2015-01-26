@@ -129,7 +129,8 @@ void rwg_who(){
 */
 
 int ras_service_single_process(UserRecordSingleProcess& one_client_record);
-int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command);
+int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command, 
+  std::map<std::string, std::string>& environ);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
 
 /* ras_service sub functions */
@@ -143,7 +144,8 @@ int read_to_buf_max_size(int fd, char* buf, int& current_size, int max_size);
 void pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj);
 void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj,
   AnonyPipe& child_output_pipe);
-bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket);
+bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket, 
+  std::map<std::string, std::string>& environ);
 void processing_child_output_data(AnonyPipe& child_output_pipe, socketfd_t client_socket);
 
 int main(int argc, char** argv){
@@ -210,9 +212,10 @@ int main(int argc, char** argv){
                     all_client_record.erase(all_client_record.begin() + i); // erase this client in all_client_record.
                     i--; // not i++ in increment stage of for loop.
                 }
-                
-                // 4. do next command preparation (ex. print shell prompt.)
-                write_all(all_client_record[i].user_socket, "% ", 2);
+                else{           
+                    // 4. do next command preparation (ex. print shell prompt.)
+                    write_all(all_client_record[i].user_socket, "% ", 2);
+                }
 
             }
         
@@ -246,7 +249,7 @@ int ras_service_single_process(UserRecordSingleProcess& one_client_record){
         /* split command and execute it. */
         newline_char[0] = '\0';
         if( execute_cmd(one_client_record.user_socket, one_client_record.cmd_pipe_manager,
-                        cur_cmd_head) == CMD_EXIT )
+                        cur_cmd_head, one_client_record.environ) == CMD_EXIT )
             return -1;
         cur_cmd_head = newline_char+1;
     }
@@ -262,7 +265,8 @@ int ras_service_single_process(UserRecordSingleProcess& one_client_record){
 }
 
 
-int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command){
+int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command,
+  std::map<std::string, std::string>& environ){
     /* parsing and execute shell command */
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
@@ -277,7 +281,7 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
 
     /* processing command */
     bool is_exit = false;
-    bool is_internal = is_internal_command_and_run(is_exit, parsed_cmds.cmds[0], client_socket);
+    bool is_internal = is_internal_command_and_run(is_exit, parsed_cmds.cmds[0], client_socket, environ);
     if( is_exit ) return CMD_EXIT;
     if( is_internal ) return CMD_NORMAL;
 
@@ -506,7 +510,8 @@ void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& r
     }
 }
 
-bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket){
+bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket,
+  std::map<std::string, std::string>& environ){
     if( cmd.executable == "exit" ){
         is_exit = true;
     }
@@ -520,6 +525,7 @@ bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t c
         const char* argv1 = cmd.arguments[1].c_str();
         const char* argv2 = cmd.arguments[2].c_str();
         setenv(argv1, argv2, 1);
+        environ[argv1] = argv2;
     }
     else{
         return false;
