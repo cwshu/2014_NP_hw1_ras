@@ -23,11 +23,13 @@
 #include "cstring_more.h"
 #include "server_arch.h"
 #include "number_pool.h"
+#include "user_communicate_manager.h"
 
 const char RWG_IP[] = "0.0.0.0";
 const int RWG_DEFAULT_PORT = 53000;
 const int MAX_ONELINE_CMD_SIZE = 65536;
 const int MAX_CMD_SIZE = 256;
+const int MAX_USER = 30;
 
 
 struct UserRecordSingleProcess{
@@ -46,6 +48,16 @@ struct UserRecordSingleProcess{
 };
 
 std::vector<UserRecordSingleProcess> all_client_record;
+UserCommunicationManager user_communicate_manager(MAX_USER, "fifo/");
+
+bool user_id_exist(const std::vector<UserCommunicationManager>& all_client_record, int client_id){
+    for( auto& one_client : all_client_record ){
+        if( one_client.user_id == client_id ){
+            return true;
+        }
+    }
+    return false;
+}
 
 void rwg_tell(int sender_counter, int client_id, std::string message){
     /*
@@ -178,22 +190,6 @@ void rwg_leave_room_msg(int leave_client_counter){
         write_all_str(one_client.user_socket, send_msg);
     }
 }
-/*
-    pipe to (client id)
-    received:
-            [id all]
-            *** (sender's name) (#(sender)) just piped '(command line)' to (client id's name) (#(client_id)) ***
-            [id (sender)]
-    [Error] *** Error: user #1 does not exist yet. *** 
-    [Error2]*** Error: the pipe #(client id)->#(client id) already exists. *** 
-            
-    receive pipe from (id)
-    received:
-            [id all]
-            *** (sender's name) (#(sender)) just received from (id's name) (#(id)) by '(command line)' ***
-            [id (sender)]
-    [Error] *** Error: the pipe #(client id)->#(client id) does not exist yet. *** 
-*/
 
 int ras_service_single_process(int client_counter);
 int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command, 
@@ -208,9 +204,9 @@ void check_command_full(int client_socket, char* command, int& current_size, int
 int read_to_buf_max_size(int fd, char* buf, int& current_size, int max_size);
 
 /* execute_cmd sub functions */
-void pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj);
-void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj,
-  AnonyPipe& child_output_pipe);
+int pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj, int sender_counter);
+int fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj,
+  AnonyPipe& child_output_pipe, int sender_counter);
 bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket, 
   std::map<std::string, std::string>& environ);
 bool is_rwg_command_and_run(SingleCommand& cmd, int sender_counter);
@@ -262,8 +258,8 @@ int main(int argc, char** argv){
             // 1. new client initialization
             int last = all_client_record.size() - 1;
             print_welcome_msg(all_client_record[last].user_socket);
-            write_all(all_client_record[last].user_socket, "% ", 2);
             rwg_enter_room_msg(last);
+            write_all(all_client_record[last].user_socket, "% ", 2);
         }
 
         for( int client_counter=0; client_counter < all_client_record.size(); client_counter++){
@@ -378,10 +374,14 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
         if( cmd_pipe_manager.cmd_has_pipe(0) ){
             current_cmd.std_input.set_pipe_redirect(0);
         }
-        pre_fd_redirection(cmd_pipe_manager, STDIN_FILENO, current_cmd.std_input);
-        pre_fd_redirection(cmd_pipe_manager, STDOUT_FILENO, current_cmd.std_output);
-        pre_fd_redirection(cmd_pipe_manager, STDERR_FILENO, current_cmd.std_error);
-        
+        int err1 = pre_fd_redirection(cmd_pipe_manager, STDIN_FILENO, current_cmd.std_input, client_counter);
+        int err2 = pre_fd_redirection(cmd_pipe_manager, STDOUT_FILENO, current_cmd.std_output, client_counter);
+        int err3 = pre_fd_redirection(cmd_pipe_manager, STDERR_FILENO, current_cmd.std_error, client_counter);
+        if( err1 == -1 || err2 == -1 || err3 == -1 ){
+            return CMD_NORMAL;
+        }
+
+
         int pid = fork();
         if( pid == 0 ){
             /* stdin redirection */
@@ -533,7 +533,8 @@ int read_to_buf_max_size(int fd, char* buf, int& current_size, int max_size){
 }
 
 /* execute_cmd sub functions */
-void pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj){
+int pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj, int sender_counter){
+    UserRecordSingleProcess& sender = all_client_record[sender_counter];
     /* create pipe */
     if( redirect_obj.kind == REDIR_PIPE ){
         if( origin_fd == STDOUT_FILENO || origin_fd == STDERR_FILENO ){
@@ -543,6 +544,39 @@ void pre_fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirectio
                 redirect_pipe.create_pipe();
         }
     }
+    else if( redirect_obj.kind == REDIR_TO_PERSON){
+    /*
+        pipe to (client id)
+        received:
+                [id all]
+                *** (sender's name) (#(sender)) just piped '(command line)' to (client id's name) (#(client_id)) ***
+                [id (sender)]
+        [Error] *** Error: user #1 does not exist yet. *** 
+        [Error2]*** Error: the pipe #(client id)->#(client id) already exists. *** 
+                
+        receive pipe from (id)
+        received:
+                [id all]
+                *** (sender's name) (#(sender)) just received from (id's name) (#(id)) by '(command line)' ***
+                [id (sender)]
+        [Error] *** Error: the pipe #(client id)->#(client id) does not exist yet. *** 
+    */
+    /*
+        if( origin_fd == STDIN_FILENO ){
+            if( !user_communicate_manager.file_exist(sender.user_id, redirect_obj.data.person_id) ){
+                // Error, no file to redirect;
+                return -1;
+            }
+        }
+        else{
+            if( user_communicate_manager.file_exist(sender.user_id, redirect_obj.data.person_id) ){
+                // Error, file is existed, can't redirect twice
+                return -1;
+            }
+        }
+    */
+    }
+    return 0;
 }
 
 void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& redirect_obj,
@@ -565,6 +599,20 @@ void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& r
             perror_and_exit("open error");
 
         dup2(file_fd, origin_fd);
+    }
+    else if( redirect_obj.kind == REDIR_TO_PERSON){
+        /*
+        int file_fd;
+        if( origin_fd == STDIN_FILENO )
+            file_fd = open(redirect_obj.data.filename.c_str(), O_RDONLY);
+        else
+            file_fd = open(redirect_obj.data.filename.c_str(), O_WRONLY|O_CREAT|O_TRUNC, 0644);
+
+        if(file_fd == -1)
+            perror_and_exit("open error");
+
+        dup2(file_fd, origin_fd);
+        */
     }
     else if( redirect_obj.kind == REDIR_PIPE ){
         int pipe_index = redirect_obj.data.pipe_index_in_manager;
