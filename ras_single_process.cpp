@@ -45,9 +45,9 @@ struct UserRecordSingleProcess{
     void use_env();
 };
 
-// id pools
+std::vector<UserRecordSingleProcess> all_client_record;
 
-void rwg_tell(){
+void rwg_tell(int sender_counter, int client_id, std::string message){
     /*
     command:
             % tell (client id) (message)
@@ -59,9 +59,21 @@ void rwg_tell(){
             [id (sender)]
     [Error] *** Error: user #(client id) does not exist yet. *** 
     */
+    UserRecordSingleProcess& sender = all_client_record[sender_counter];
+    for( auto& one_client : all_client_record ){
+        if( one_client.user_id == client_id ){
+            std::string send_msg = "*** " + sender.user_name + " told you ***: " + message + "\n";
+            write_all_str(one_client.user_socket, send_msg);
+            return;
+        }
+    }
+
+    // Error: no user client_id
+    std::string error_msg = "*** Error: user #" + std::to_string(client_id) + " does not exist yet. ***\n";
+    write_all_str(sender.user_socket, error_msg);
 }
 
-void rwg_yell(){
+void rwg_yell(int sender_counter, std::string message){
     /*
     command:
             % yell (message)
@@ -70,9 +82,15 @@ void rwg_yell(){
             [id all]
             *** (sender's name) yelled ***: (message)
     */
+    UserRecordSingleProcess& sender = all_client_record[sender_counter];
+    std::string send_msg = "*** " + sender.user_name + " yell ***: " + message + "\n";
+
+    for( auto& one_client : all_client_record ){
+        write_all_str(one_client.user_socket, send_msg);
+    }
 }
 
-void rwg_name(){
+void rwg_name(int sender_counter, std::string name){
     /*
     command:
             % name (name)
@@ -83,10 +101,27 @@ void rwg_name(){
             [id (sender)]
     [Error] *** User '(name)' already exists. ***
     */
+    UserRecordSingleProcess& sender = all_client_record[sender_counter];
 
+
+    std::string error_msg = "*** User '" + name + "' already exists. ***\n";
+    for( auto& one_client : all_client_record ){
+        if( one_client.user_name == name ){
+            // Error: same name
+            write_all_str(sender.user_socket, error_msg);
+            return;
+        }
+    }
+    // Correct: no same name
+    sender.user_name = name;
+    // boardcast
+    std::string send_msg =  "*** User from " + sender.user_addr.to_str("/") + " is named '" + name + "'. ***\n";
+    for( auto& one_client : all_client_record ){
+        write_all_str(one_client.user_socket, send_msg);   
+    }
 }
 
-void rwg_who(){
+void rwg_who(int sender_counter){
     /*
     command:
             % who
@@ -99,19 +134,51 @@ void rwg_who(){
             (3rd id)[Tab](3rd name)[Tab](3rd IP/port)([Tab](<-me))
             ...
     */
+    UserRecordSingleProcess& sender = all_client_record[sender_counter];
+    write_all_str(sender.user_socket, "<ID>\t<nickname>\t<IP/port>\t<indicate me>\n");
+
+    for( auto& one_client : all_client_record ){
+        std::string send_msg = std::to_string(one_client.user_id) + "\t" + one_client.user_name + "\t" + \
+                               one_client.user_addr.to_str("/");
+        if( one_client.user_id == sender.user_id ){
+            send_msg += "\t<-me";
+        }
+        send_msg += "\n";
+        
+        write_all_str(sender.user_socket, send_msg);
+    }
 }
 
+void rwg_enter_room_msg(int enter_client_counter){
+    /* 
+     * entering room
+     * received:
+     *         [id all]
+     *         *** User '(no name)' entered from 140.113.215.63/1013. ***
+     */
+    UserRecordSingleProcess& enter_client = all_client_record[enter_client_counter];
+    std::string send_msg = "*** User '(no name)' entered from " + enter_client.user_addr.to_str("/") + ". ***\n";
+
+    for( auto& one_client : all_client_record ){
+        write_all_str(one_client.user_socket, send_msg);
+    }
+}
+
+void rwg_leave_room_msg(int leave_client_counter){
+    /* 
+     * leave room
+     * received:
+     *         [id all]
+     *         *** User '(name)' left ***
+     */
+    UserRecordSingleProcess& leave_client = all_client_record[leave_client_counter];
+    std::string send_msg = "*** User '" + leave_client.user_name + "' left ***\n";
+
+    for( auto& one_client : all_client_record ){
+        write_all_str(one_client.user_socket, send_msg);
+    }
+}
 /*
-    entering room
-    received:
-            [id all]
-            *** User '(no name)' entered from 140.113.215.63/1013. ***
-
-    leave room
-    received:
-            [id all]
-            *** User '(name)' left ***
-
     pipe to (client id)
     received:
             [id all]
@@ -128,9 +195,9 @@ void rwg_who(){
     [Error] *** Error: the pipe #(client id)->#(client id) does not exist yet. *** 
 */
 
-int ras_service_single_process(UserRecordSingleProcess& one_client_record);
+int ras_service_single_process(int client_counter);
 int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command, 
-  std::map<std::string, std::string>& environ);
+  int client_counter);
     const int CMD_NORMAL = 0, CMD_EXIT = 1;
 
 /* ras_service sub functions */
@@ -146,6 +213,7 @@ void fd_redirection(PipeManager& cmd_pipe_manager, int origin_fd, Redirection& r
   AnonyPipe& child_output_pipe);
 bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t client_socket, 
   std::map<std::string, std::string>& environ);
+bool is_rwg_command_and_run(SingleCommand& cmd, int sender_counter);
 void processing_child_output_data(AnonyPipe& child_output_pipe, socketfd_t client_socket);
 
 int main(int argc, char** argv){
@@ -157,7 +225,6 @@ int main(int argc, char** argv){
     socketfd_t rwg_listen_socket = bind_and_listen_tcp_socket(rwg_addr);
 
     // global initialization
-    std::vector<UserRecordSingleProcess> all_client_record;
     ras_shell_init_single_process(); // chdir
     number_pool id_pool(1, 30);
 
@@ -196,42 +263,43 @@ int main(int argc, char** argv){
             int last = all_client_record.size() - 1;
             print_welcome_msg(all_client_record[last].user_socket);
             write_all(all_client_record[last].user_socket, "% ", 2);
+            rwg_enter_room_msg(last);
         }
 
-        for( int i=0; i<all_client_record.size(); i++){
-            if( FD_ISSET(all_client_record[i].user_socket, &select_read_fds) ){ // 2. client input
+        for( int client_counter=0; client_counter < all_client_record.size(); client_counter++){
+            if( FD_ISSET(all_client_record[client_counter].user_socket, &select_read_fds) ){ // 2. client input
                 // 3. processing client command and response.
-                int error = ras_service_single_process(all_client_record[i]);
+                int error = ras_service_single_process(client_counter);
                 if( error == -1 ){
                     // 5. finalization(clear) this client.
-                    FD_CLR(all_client_record[i].user_socket, &read_fds);
-                    close(all_client_record[i].user_socket);
+                    rwg_leave_room_msg(client_counter);
 
-                    id_pool.release_id(all_client_record[i].user_id);
+                    FD_CLR(all_client_record[client_counter].user_socket, &read_fds);
+                    close(all_client_record[client_counter].user_socket);
 
-                    all_client_record.erase(all_client_record.begin() + i); // erase this client in all_client_record.
-                    i--; // not i++ in increment stage of for loop.
+                    id_pool.release_id(all_client_record[client_counter].user_id);
+
+                    // erase this client in all_client_record.
+                    all_client_record.erase(all_client_record.begin() + client_counter); 
+                    client_counter--; // not client_counter++ in increment stage of for loop.
                 }
                 else{           
                     // 4. do next command preparation (ex. print shell prompt.)
-                    write_all(all_client_record[i].user_socket, "% ", 2);
+                    write_all(all_client_record[client_counter].user_socket, "% ", 2);
                 }
-
             }
-        
-        }
-        for( auto& one_client_record : all_client_record ){
         }
     }
     return 0;
 }
 
-int ras_service_single_process(UserRecordSingleProcess& one_client_record){
+int ras_service_single_process(int client_counter){
     /*
      * return value:
      *  0 for normal
      * -1 for ending
      */
+    UserRecordSingleProcess& one_client_record = all_client_record[client_counter];
     one_client_record.use_env();
 
     check_command_full(one_client_record.user_socket, one_client_record.command_buf, 
@@ -249,7 +317,7 @@ int ras_service_single_process(UserRecordSingleProcess& one_client_record){
         /* split command and execute it. */
         newline_char[0] = '\0';
         if( execute_cmd(one_client_record.user_socket, one_client_record.cmd_pipe_manager,
-                        cur_cmd_head, one_client_record.environ) == CMD_EXIT )
+                        cur_cmd_head, client_counter) == CMD_EXIT )
             return -1;
         cur_cmd_head = newline_char+1;
     }
@@ -266,7 +334,7 @@ int ras_service_single_process(UserRecordSingleProcess& one_client_record){
 
 
 int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const char* origin_command,
-  std::map<std::string, std::string>& environ){
+  int client_counter){
     /* parsing and execute shell command */
     int cmd_len = strlen(origin_command);
     if( cmd_len == 0 ) 
@@ -281,9 +349,13 @@ int execute_cmd(socketfd_t client_socket, PipeManager& cmd_pipe_manager, const c
 
     /* processing command */
     bool is_exit = false;
+    std::map<std::string, std::string>& environ = all_client_record[client_counter].environ;
     bool is_internal = is_internal_command_and_run(is_exit, parsed_cmds.cmds[0], client_socket, environ);
     if( is_exit ) return CMD_EXIT;
     if( is_internal ) return CMD_NORMAL;
+
+    bool is_rwg = is_rwg_command_and_run(parsed_cmds.cmds[0], client_counter);
+    if( is_rwg ) return CMD_NORMAL;
 
     // cmd_pipe_manager, parsed_cmds
     AnonyPipe child_output_pipe;
@@ -531,6 +603,27 @@ bool is_internal_command_and_run(bool& is_exit, SingleCommand& cmd, socketfd_t c
         return false;
     }
     return true;
+}
+
+bool is_rwg_command_and_run(SingleCommand& cmd, int sender_counter){
+    if( cmd.executable == "tell" ){
+        rwg_tell(sender_counter, std::stoi(cmd.arguments[1]), cmd.arguments[2]);
+        return true;
+    }
+    else if( cmd.executable == "yell" ){
+        rwg_yell(sender_counter, cmd.arguments[1]);
+        return true;
+    }
+    else if( cmd.executable == "name" ){
+        rwg_name(sender_counter, cmd.arguments[1]);
+        return true;
+    }
+    else if( cmd.executable == "who" ){
+        rwg_who(sender_counter);
+        return true;
+    }
+
+    return false;
 }
 
 void processing_child_output_data(AnonyPipe& child_output_pipe, socketfd_t client_socket){

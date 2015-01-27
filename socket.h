@@ -24,7 +24,7 @@ struct SocketAddr{
     SocketAddr(std::string ipv4_addr_str, uint16_t port_hbytes);
     void set_sockaddr(uint32_t ipv4_nbytes, uint16_t port_nbytes);
     void get_sockaddr(uint32_t* ipv4_nbytes, uint16_t* port_nbytes);
-    std::string to_str();
+    std::string to_str(const std::string& spliter = ":");
 
     void to_sockaddr_in(struct sockaddr_in& ret_addr);
     void from_sockaddr_in(struct sockaddr_in& input_addr);
